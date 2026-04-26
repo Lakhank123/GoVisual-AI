@@ -1,0 +1,3 @@
+# Place your trained T5 model files here
+# After running the Colab training notebook, download and extract the model zip into this directory.
+# Required files: config.json, tokenizer.json, model.safetensors (or pytorch_model.bin)

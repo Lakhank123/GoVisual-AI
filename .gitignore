@@ -1,0 +1,61 @@
+# === Python ===
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+*.venv/
+venv/
+.env
+
+# === Node / Next.js ===
+node_modules/
+.next/
+out/
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+*.tsbuildinfo
+next-env.d.ts
+
+# === ML Model (too large for Git) ===
+backend/ml_model/model.safetensors
+backend/ml_model/spiece.model
+backend/ml_model/training_args.bin
+
+# === Generated / Runtime files ===
+backend/generated_images/*.jpg
+backend/generated_images/*.png
+backend/generated_images/*.jpeg
+backend/generated_images/*.webp
+
+# === Dataset (large CSV) ===
+govisual_dataset.csv
+
+# === Env files ===
+.env
+.env.local
+.env*.local
+backend/.env
+frontend/.env*
+
+# === OS / Editor ===
+.DS_Store
+Thumbs.db
+*.pem
+.vercel
+.vscode/
+.idea/
+
+# === Debug logs ===
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# === Colab checkpoints ===
+.ipynb_checkpoints/

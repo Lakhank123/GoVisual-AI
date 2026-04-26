@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+python-dotenv
+pillow
+transformers
+torch
+cloudinary
+httpx
+colorthief
+python-multipart
