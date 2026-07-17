@@ -32,15 +32,28 @@ from dotenv import load_dotenv
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"), override=True)
 
+from services.addons.brandbook_service  import BrandBookService
+from services.addons.photoshoot_service import PhotoshootService
+from services.addons.video_service      import VideoService
+from services.addons.instagram_service  import InstagramService
+from routes.addon_routes                import router as addon_router
+from routes.onboard_routes              import router as onboard_router
+from routes.generation_routes           import router as generation_router
+
 app = FastAPI(
     title="GoVisual AI API",
     description="Brand extraction + AI creative generation for local businesses",
     version="1.0.0",
 )
 
+app.include_router(addon_router)
+app.include_router(onboard_router)
+app.include_router(generation_router)
+
 # Static files for generated images
 os.makedirs("generated_images", exist_ok=True)
 app.mount("/static/generated", StaticFiles(directory="generated_images"), name="generated")
+app.mount("/static/videos", StaticFiles(directory="generated_videos"), name="videos")
 
 app.add_middleware(
     CORSMiddleware,
@@ -53,15 +66,20 @@ app.add_middleware(
 # ─── Import services (loaded lazily to avoid slow startup) ────────────────────
 from services.brand     import BrandService
 from services.t5_model  import PromptService
-from services.gemini    import GeminiService
+from services.image_gen import ImageGenService
 from services.watermark import WatermarkService
 from services.storage   import StorageService
 
 brand_svc     = BrandService()
 prompt_svc    = PromptService()
-gemini_svc    = GeminiService()
+image_svc     = ImageGenService()
 watermark_svc = WatermarkService()
 storage_svc   = StorageService()
+
+brandbook_service  = BrandBookService()
+photoshoot_service = PhotoshootService()
+video_service      = VideoService()
+instagram_service  = InstagramService()
 
 
 # ─── MODELS ──────────────────────────────────────────────────────────────────
@@ -109,7 +127,7 @@ def root():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "model_loaded": prompt_svc.is_loaded()}
+    return {"status": "ok", "model_loaded": prompt_svc.is_loaded(), "image_provider": image_svc.provider_name}
 
 
 @app.get("/brand-lookup")
@@ -172,7 +190,15 @@ async def generate_samples(
         )
 
         prompts = prompt_svc.generate(default_input)
-        images  = await _run_generation(prompts[:1], photo_bytes, profile["name"])  # 1 sample
+        meta = {
+            "brand_name": profile["name"],
+            "product": category,
+            "price": "see store",
+            "offer": "no offer",
+            "brand_colors": " & ".join(profile["colors"][:2]),
+            "category": category
+        }
+        images  = await _run_generation(prompts[:1], photo_bytes, profile["name"], meta=meta)  # 1 sample
 
         return {"profile": profile, "sample_images": images}
 
@@ -240,7 +266,15 @@ async def generate(
 
     # 4. Generate images from Gemini (3 calls, one per prompt)
     try:
-        images = await _run_generation(prompts, image_bytes, brand_name)
+        meta = {
+            "brand_name": brand_name,
+            "product": product,
+            "price": price,
+            "offer": offer,
+            "brand_colors": brand_colors,
+            "category": category
+        }
+        images = await _run_generation(prompts, image_bytes, brand_name, meta=meta)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Image generation failed: {e}")
 
@@ -256,23 +290,61 @@ async def generate(
 
 # ─── HELPER ──────────────────────────────────────────────────────────────────
 
-async def _run_generation(prompts: list, image_bytes: bytes, brand_name: str):
+async def _run_generation(prompts: list, image_bytes: bytes, brand_name: str, meta: dict = None):
     """Run Gemini for each prompt, apply watermark, upload to Cloudinary."""
     tier_labels = ["clean", "professional", "creative"]
     results = []
+    print(f"[Generate] Starting generation for {len(prompts)} prompts")
+
+    # 1. Lazy load background removal and compositing services
+    from services.background_removal import remove_background, refine_edges
+    from services.compositor import composite_product
+
+    # Extract metadata fields
+    product_name = meta.get("product", "") if meta else ""
+    category = meta.get("category", "default") if meta else "default"
+
+    # Read config flags from environment
+    bg_removal_enabled = os.getenv("BACKGROUND_REMOVAL", "True").strip().lower() == "true"
+
+    # Strip background from user product photo once at the beginning
+    product_png_bytes = None
+    if bg_removal_enabled and image_bytes and len(image_bytes) > 100:
+        print("[Generate] Extracting transparent product and refining edges...")
+        transparent_bytes = remove_background(image_bytes)
+        product_png_bytes = refine_edges(transparent_bytes)
 
     for i, prompt in enumerate(prompts[:3]):
         try:
-            # Generate with Gemini (with timeout)
+            print(f"[Generate] Generating background {i+1}/3 with prompt: {prompt[:100]}...")
+            # Generate empty background environment
+            # Pass product_name so prompt pre-cleaning strips product references
             gen_bytes = await asyncio.wait_for(
-                gemini_svc.generate(prompt, image_bytes),
+                image_svc.generate(prompt, image_bytes, product_name=product_name),
                 timeout=45.0
             )
+            print(f"[Generate] Background {i+1} generation returned: {len(gen_bytes) if gen_bytes else 0} bytes")
             if gen_bytes is None:
+                print(f"[Generate] Background {i+1} is None, skipping")
                 continue
 
-            # Apply watermark
-            wm_bytes = watermark_svc.apply(gen_bytes)
+            # 2. Blend the transparent product PNG onto the AI-generated background
+            if bg_removal_enabled and product_png_bytes:
+                print(f"[Generate] Compositing original product onto background {i+1}...")
+                merged_bytes = composite_product(
+                    product_png_bytes=product_png_bytes,
+                    background_jpg_bytes=gen_bytes,
+                    category=category
+                )
+            else:
+                merged_bytes = gen_bytes
+
+            # Apply watermark / creative overlay
+            if meta:
+                wm_bytes = watermark_svc.apply_creative_overlay(merged_bytes, meta)
+            else:
+                wm_bytes = watermark_svc.apply(merged_bytes)
+            print(f"[Generate] Applied creative watermark overlay, now {len(wm_bytes)} bytes")
 
             # Upload to cloud or save locally
             url = await storage_svc.upload(
@@ -280,6 +352,7 @@ async def _run_generation(prompts: list, image_bytes: bytes, brand_name: str):
                 folder="govisual/generated",
                 filename=f"{brand_name.replace(' ', '_')}_{tier_labels[i]}_{uuid.uuid4().hex[:6]}.jpg",
             )
+            print(f"[Generate] Uploaded image {i+1} to {url}")
 
             results.append({
                 "tier":           tier_labels[i],
@@ -288,12 +361,15 @@ async def _run_generation(prompts: list, image_bytes: bytes, brand_name: str):
                 "prompt_preview": prompt[:120] + "...",
             })
         except asyncio.TimeoutError:
-            print(f"Timeout generating image {i+1}")
+            print(f"[Generate] [FAIL] Timeout generating image {i+1}")
             continue
         except Exception as e:
-            print(f"Error generating image {i+1}: {e}")
+            print(f"[Generate] [FAIL] Error generating image {i+1}: {e}")
+            import traceback
+            traceback.print_exc()
             continue
-
+    
+    print(f"[Generate] Generation complete: {len(results)} images generated")
     return results
 
 

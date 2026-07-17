@@ -7,17 +7,24 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-preview-image-generat
 
 class GeminiService:
 
-    async def generate(self, prompt: str, image_bytes: bytes):
+    async def generate(self, prompt: str, image_bytes: bytes, shop_images_b64: list[str] | None = None):
         gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
         if not gemini_api_key:
             print("No GEMINI_API_KEY — returning placeholder")
             return self._placeholder_image(prompt)
+
+        # Build parts list: shop images first (brand context), then product image, then prompt
+        parts = []
+        if shop_images_b64:
+            for img_b64 in shop_images_b64:
+                parts.append({"inline_data": {"mime_type": "image/jpeg", "data": img_b64}})
+
         image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+        parts.append({"inline_data": {"mime_type": "image/jpeg", "data": image_b64}})
+        parts.append({"text": prompt})
+
         payload = {
-            "contents": [{"parts": [
-                {"inline_data": {"mime_type": "image/jpeg", "data": image_b64}},
-                {"text": prompt},
-            ]}],
+            "contents": [{"parts": parts}],
             "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]},
         }
         url = (

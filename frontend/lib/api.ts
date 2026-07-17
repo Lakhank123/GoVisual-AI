@@ -1,4 +1,4 @@
-const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000'
 
 export async function searchBrand(q: string, city: string) {
   try {
@@ -32,10 +32,18 @@ export async function generateCreatives(
   productImage?: File | null,
   referenceImageUrl?: string
 ) {
+  // Map frontend camelCase keys to backend snake_case keys
+  const keyMap: Record<string, string> = {
+    imageType: 'image_type',
+    mainText: 'main_text',
+  }
+  // Keys that should NOT be sent as form fields
+  const skipKeys = new Set(['productImageFile'])
+
   const form = new FormData()
   Object.entries(answers).forEach(([k, v]) => {
-    if (v != null && k !== 'productImageFile') {
-      const key = k === 'imageType' ? 'image_type' : k === 'mainText' ? 'main_text' : k
+    if (v != null && !skipKeys.has(k)) {
+      const key = keyMap[k] || k
       form.append(key, String(v))
     }
   })
@@ -49,6 +57,11 @@ export async function generateCreatives(
     form.append('reference_image_url', referenceImageUrl)
   }
   const r = await fetch(`${BASE}/generate`, { method: 'POST', body: form })
-  if (!r.ok) throw new Error(`Generation failed: HTTP ${r.status}`)
+  if (!r.ok) {
+    const errText = await r.text().catch(() => '')
+    console.error(`Generate failed: HTTP ${r.status}`, errText)
+    throw new Error(`Generation failed: HTTP ${r.status}`)
+  }
   return r.json()
 }
+

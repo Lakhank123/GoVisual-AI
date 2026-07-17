@@ -1,0 +1,39 @@
+/* GhostCursor.css */
+
+.ghost-cursor {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.ghost-cursor canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Ensure the cursor effect is visible */
+@supports (mix-blend-mode: screen) {
+  .ghost-cursor {
+    mix-blend-mode: screen;
+  }
+}
+
+/* Disable on touch devices for better performance */
+@media (hover: none) and (pointer: coarse) {
+  .ghost-cursor {
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .ghost-cursor {
+    opacity: 0;
+  }
+}

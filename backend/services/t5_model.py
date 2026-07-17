@@ -11,14 +11,15 @@ class PromptService:
         self._tokenizer = None
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
         self.using_fallback = True
-        self._load()
 
     def _load(self):
+        if self._model is not None:
+            return
         try:
             from transformers import T5Tokenizer, T5ForConditionalGeneration
             print(f"Loading T5 from: {MODEL_PATH}")
-            self._tokenizer = T5Tokenizer.from_pretrained(MODEL_PATH)
-            self._model = T5ForConditionalGeneration.from_pretrained(MODEL_PATH)
+            self._tokenizer = T5Tokenizer.from_pretrained(MODEL_PATH, local_files_only=True)
+            self._model = T5ForConditionalGeneration.from_pretrained(MODEL_PATH, local_files_only=True)
             self._model = self._model.to(self._device)
             self._model.eval()
             self.using_fallback = False
@@ -31,6 +32,7 @@ class PromptService:
         return self._model is not None
 
     def generate(self, input_text: str) -> list:
+        self._load()
         if self._model is None:
             return self._fallback_prompts(input_text)
         try:

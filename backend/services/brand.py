@@ -1,13 +1,14 @@
-﻿import os
+import os
 import httpx
-
-GOOGLE_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY", "")
-
 
 class BrandService:
 
+    def _get_google_key(self):
+        return os.getenv("GOOGLE_PLACES_API_KEY", "").strip()
+
     async def search(self, query: str, city: str) -> list:
-        if not GOOGLE_API_KEY:
+        key = self._get_google_key()
+        if not key:
             return self._mock_results(query, city)
         search_query = f"{query} {city}".strip()
         url = "https://maps.googleapis.com/maps/api/place/textsearch/json"
@@ -15,7 +16,7 @@ class BrandService:
             async with httpx.AsyncClient(timeout=10) as client:
                 r = await client.get(url, params={
                     "query": search_query,
-                    "key": GOOGLE_API_KEY,
+                    "key": key,
                     "type": "establishment",
                     "region": "in",
                 })
@@ -38,7 +39,8 @@ class BrandService:
             return self._mock_results(query, city)
 
     async def extract_profile(self, place_id: str) -> dict:
-        if not GOOGLE_API_KEY or place_id.startswith("mock"):
+        key = self._get_google_key()
+        if not key or place_id.startswith("mock"):
             return self._mock_profile(place_id)
         url = "https://maps.googleapis.com/maps/api/place/details/json"
         try:
@@ -46,7 +48,7 @@ class BrandService:
                 r = await client.get(url, params={
                     "place_id": place_id,
                     "fields": "name,website,photos,formatted_address,icon",
-                    "key": GOOGLE_API_KEY,
+                    "key": key,
                 })
                 result = r.json().get("result", {})
             photos = []
@@ -63,6 +65,9 @@ class BrandService:
                     colors = self._extract_colors(photo_bytes)
                 except Exception:
                     pass
+                    
+            annotated_colors = [{"hex": c, "source": "google_business"} for c in colors]
+            
             return {
                 "place_id": place_id,
                 "name": result.get("name", "Your Brand"),
@@ -70,7 +75,7 @@ class BrandService:
                 "address": result.get("formatted_address", ""),
                 "logo_url": result.get("icon", ""),
                 "photos": photos,
-                "colors": colors,
+                "colors": annotated_colors,
             }
         except Exception as e:
             print(f"Place details error: {e}")
@@ -89,11 +94,12 @@ class BrandService:
         return [f"#{r:02x}{g:02x}{b:02x}" for r, g, b in palette]
 
     def _photo_url(self, photo_reference: str, maxwidth: int = 400) -> str:
+        key = self._get_google_key()
         return (
             f"https://maps.googleapis.com/maps/api/place/photo"
             f"?maxwidth={maxwidth}"
             f"&photo_reference={photo_reference}"
-            f"&key={GOOGLE_API_KEY}"
+            f"&key={key}"
         )
 
     def _mock_results(self, query, city):
@@ -122,5 +128,9 @@ class BrandService:
             "address": "Maharashtra, India",
             "logo_url": "",
             "photos": [],
-            "colors": ["#1a1a2e", "#e94560", "#0f3460"],
+            "colors": [
+                {"hex": "#1a1a2e", "source": "google_business"},
+                {"hex": "#e94560", "source": "google_business"},
+                {"hex": "#0f3460", "source": "google_business"}
+            ],
         }

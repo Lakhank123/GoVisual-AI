@@ -1,0 +1,76 @@
+{
+  "avatars": [
+    {
+      "id": "urban-woman",
+      "name": "Priya",
+      "description": "Urban Mumbai woman, 25–35",
+      "emoji": "👩🏽",
+      "style": "Modern, confident, trendy",
+      "filename": "priya.jpg",
+      "chatgpt_prompt": "Professional photo of a modern Indian woman aged 25-35, Mumbai fashion style, wearing a stylish kurta or western outfit, confident smile, clean white studio background, professional lighting, high resolution, realistic photography style, no text, no watermark"
+    },
+    {
+      "id": "professional-man",
+      "name": "Rahul",
+      "description": "Professional businessman, 30–40",
+      "emoji": "👨🏽💼",
+      "style": "Smart, corporate, trustworthy",
+      "filename": "rahul.jpg",
+      "chatgpt_prompt": "Professional photo of an Indian businessman aged 30-40, wearing formal shirt and trousers, neat appearance, confident expression, clean white or light grey studio background, professional corporate lighting, high resolution, realistic photography style, no text, no watermark"
+    },
+    {
+      "id": "traditional-woman",
+      "name": "Sunita",
+      "description": "Traditional Indian woman, 35–50",
+      "emoji": "👩🏽🦱",
+      "style": "Elegant, saree, warm",
+      "filename": "sunita.jpg",
+      "chatgpt_prompt": "Professional photo of a traditional Indian woman aged 35-50, wearing an elegant silk saree, warm and welcoming smile, soft studio lighting with warm tones, clean background, high resolution, realistic photography style, no text, no watermark"
+    },
+    {
+      "id": "young-man",
+      "name": "Arjun",
+      "description": "Young college student, 18–25",
+      "emoji": "🧑🏽",
+      "style": "Casual, Gen Z, energetic",
+      "filename": "arjun.jpg",
+      "chatgpt_prompt": "Professional photo of a young Indian man aged 18-25, wearing casual streetwear or jeans and t-shirt, energetic and friendly expression, clean white background, natural lifestyle lighting, high resolution, realistic photography style, no text, no watermark"
+    },
+    {
+      "id": "bride",
+      "name": "Kavya",
+      "description": "Bridal / festive look",
+      "emoji": "👰🏽",
+      "style": "Festive, jewellery-ready, glowing",
+      "filename": "kavya.jpg",
+      "chatgpt_prompt": "Professional photo of a beautiful Indian bride aged 25-30, full bridal makeup and jewellery, wearing a red or pink bridal lehenga, warm golden hour lighting, soft bokeh background, high resolution, realistic photography style, no text, no watermark"
+    },
+    {
+      "id": "shopkeeper",
+      "name": "Ramesh",
+      "description": "Local shopkeeper, 40–55",
+      "emoji": "🧔🏽",
+      "style": "Approachable, authentic, Mumbai local",
+      "filename": "ramesh.jpg",
+      "chatgpt_prompt": "Professional photo of a middle-aged Indian man aged 40-55, wearing a simple kurta or collared shirt, friendly and trustworthy expression, warm shop or studio background, natural lighting, high resolution, realistic photography style, no text, no watermark"
+    },
+    {
+      "id": "fitness-woman",
+      "name": "Anjali",
+      "description": "Fitness woman, 22–32",
+      "emoji": "🏋🏽\u200d♀️",
+      "style": "Active, healthy, modern",
+      "filename": "anjali.jpg",
+      "chatgpt_prompt": "Professional photo of a fit Indian woman aged 22-32, wearing activewear or gym clothes, healthy and energetic expression, clean white or gym background, bright natural lighting, high resolution, realistic photography style, no text, no watermark"
+    },
+    {
+      "id": "studio-plain",
+      "name": "No Avatar",
+      "description": "Product only, plain studio",
+      "emoji": "⬜",
+      "style": "Clean studio, no model",
+      "filename": null,
+      "chatgpt_prompt": null
+    }
+  ]
+}
