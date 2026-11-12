@@ -2,112 +2,100 @@ import os
 import io
 import re
 import math
-from PIL import Image, ImageDraw, ImageFilter, ImageStat
+from PIL import Image, ImageDraw, ImageFilter, ImageStat, ImageEnhance
 
 CATEGORY_CONFIGS = {
     "Electronics": {
         "scale": 0.50,
         "shadows": True,
-        "shadow_opacity": 130,
+        "shadow_opacity": 150,
         "reflections": True,
         "reflection_opacity": 60,
-        "ground_offset": 0.05
+        "ground_offset": 0.10,
+        "contact_shadow": True
     },
     "Jewellery": {
         "scale": 0.45,
         "shadows": True,
-        "shadow_opacity": 100,
+        "shadow_opacity": 120,
         "reflections": True,
         "reflection_opacity": 80,
-        "ground_offset": 0.05
+        "ground_offset": 0.08,
+        "contact_shadow": True
     },
     "Food & Drinks": {
         "scale": 0.65,
         "shadows": True,
-        "shadow_opacity": 160,
+        "shadow_opacity": 180,
         "reflections": False,
         "reflection_opacity": 0,
-        "ground_offset": 0.08
+        "ground_offset": 0.15,
+        "contact_shadow": True
     },
     "Clothing / Fashion": {
         "scale": 0.60,
         "shadows": True,
-        "shadow_opacity": 120,
+        "shadow_opacity": 140,
         "reflections": False,
         "reflection_opacity": 0,
-        "ground_offset": 0.05
+        "ground_offset": 0.10,
+        "contact_shadow": True
     },
     "default": {
         "scale": 0.55,
         "shadows": True,
-        "shadow_opacity": 130,
+        "shadow_opacity": 150,
         "reflections": False,
         "reflection_opacity": 0,
-        "ground_offset": 0.05
+        "ground_offset": 0.12,
+        "contact_shadow": True
     }
 }
 
 def get_category_config(category: str) -> dict:
-    """Return specific compositor guidelines for a given product category."""
     if not category:
         return CATEGORY_CONFIGS["default"]
-    
-    # Try case-insensitive matching
     for cat_name, config in CATEGORY_CONFIGS.items():
         if cat_name.lower() in category.lower() or category.lower() in cat_name.lower():
-            print(f"[Compositor] Matched category [{category}] to config [{cat_name}]")
             return config
-            
     return CATEGORY_CONFIGS["default"]
+
+def _feather_edges(img: Image.Image, radius: int = 1) -> Image.Image:
+    """Softens the edges of the transparent product so it doesn't look like a cutout."""
+    r, g, b, a = img.split()
+    a_blurred = a.filter(ImageFilter.GaussianBlur(radius))
+    return Image.merge("RGBA", (r, g, b, a_blurred))
 
 def composite_product(
     product_png_bytes: bytes,
     background_jpg_bytes: bytes,
     category: str = "default"
 ) -> bytes:
-    """
-    Composite the transparent product PNG onto the generated background.
-    Resizes, aligns, tints, and adds shadows/reflections based on category requirements.
-    """
     try:
-        # Load environment variables (fallback overrides)
         use_shadows = os.getenv("SHADOWS", "True").strip().lower() == "true"
         use_reflections = os.getenv("REFLECTIONS", "True").strip().lower() == "true"
-        save_debug = os.getenv("SAVE_DEBUG_IMAGES", "True").strip().lower() == "true"
-        debug_dir = "debug_images"
-        os.makedirs(debug_dir, exist_ok=True)
 
-        # Load images
         product = Image.open(io.BytesIO(product_png_bytes)).convert("RGBA")
         background = Image.open(io.BytesIO(background_jpg_bytes)).convert("RGBA")
         
         bw, bh = background.size
-        pw, ph = product.size
         
-        # Save step 2: background
-        if save_debug:
-            background.save(os.path.join(debug_dir, "2_background.png"), "PNG")
-            
-        # 1. Bounding box cropping (remove blank margins around product)
+        # 1. Bounding box cropping
         bbox = product.getbbox()
         if bbox:
             product = product.crop(bbox)
-            pw, ph = product.size
+        pw, ph = product.size
             
-        # 2. Get category rules & intelligent auto-scaling
+        # 2. Advanced Scaling & Perspective Placement
         config = get_category_config(category)
         base_scale = config["scale"]
         aspect_ratio = pw / ph
         
-        # Wide products vs tall products vs square products
         if aspect_ratio > 1.25:
-            # Wide object: scale mainly horizontally
             scale_factor = (bw * base_scale * 1.1) / pw
         elif aspect_ratio < 0.75:
-            # Tall object: scale mainly vertically
-            scale_factor = (bh * base_scale * 0.95) / ph
+            scale_factor = (bh * base_scale * 0.90) / ph
         else:
-            # Square object: bound within constraints
             scale_factor = min((bw * base_scale) / pw, (bh * base_scale) / ph)
             
         new_pw = max(int(pw * scale_factor), 50)
@@ -115,77 +103,75 @@ def composite_product(
         
         product_resized = product.resize((new_pw, new_ph), Image.Resampling.LANCZOS)
         
-        # 3. Calculate alignment positioning
+        # Feather the edges of the product for realistic blending
+        product_resized = _feather_edges(product_resized, radius=1)
+        
+        # Position slightly lower to match table/ground perspective in AI backgrounds
         pos_x = (bw - new_pw) // 2
-        # Grounding offset dynamically shifts down for food / fashion
         offset_y = int(new_ph * config["ground_offset"])
         pos_y = (bh - new_ph) // 2 + offset_y
         
-        # 4. Color and Lighting Matching
-        # Extract lighting (average brightness) and dominant color from background region
+        # 3. Environmental Light Matching
         bg_region = background.crop([pos_x, pos_y, pos_x + new_pw, pos_y + new_ph])
         bg_stat = ImageStat.Stat(bg_region.convert("L"))
         bg_brightness = bg_stat.mean[0] if bg_stat.mean else 128
         
-        # Get dominant color tint from background region
         region_rgb = bg_region.convert("RGB")
         bg_rgb_stat = ImageStat.Stat(region_rgb)
         bg_mean_color = bg_rgb_stat.mean if bg_rgb_stat.mean else [128, 128, 128]
         
-        # Adjust product lighting to match background brightness
-        # Bright background -> slightly brighten product; Dark background -> slightly dim product
         brightness_ratio = bg_brightness / 128.0
-        # Dampen ratio to prevent over-exposure
-        adjusted_ratio = 1.0 + (brightness_ratio - 1.0) * 0.15
+        adjusted_ratio = 1.0 + (brightness_ratio - 1.0) * 0.25 # Slightly stronger matching
         
-        # Apply brightness adjustment and subtle tinting
         product_adjusted = _apply_lighting_tint(product_resized, adjusted_ratio, bg_mean_color)
         
-        # Prepare drawing canvas
         canvas = Image.new("RGBA", background.size, (0, 0, 0, 0))
         
-        # 5. Render soft realistic ground shadows
+        # 4. Realistic Soft Contact & Directional Shadows
         if use_shadows and config["shadows"]:
-            print(f"[Compositor] Drawing ground shadow with base opacity {config['shadow_opacity']}...")
             alpha = product_adjusted.split()[3]
             
-            # Create shadow mask: squished vertically to simulate ground projection
-            shadow_w = new_pw
-            shadow_h = max(int(new_ph * 0.18), 10)
+            # --- Contact Shadow (Ambient Occlusion style, dark & close) ---
+            if config.get("contact_shadow", True):
+                contact_w = new_pw
+                contact_h = max(int(new_ph * 0.08), 5)
+                contact_mask = alpha.resize((contact_w, contact_h), Image.Resampling.LANCZOS)
+                contact_mask = contact_mask.filter(ImageFilter.GaussianBlur(radius=3))
+                
+                c_opacity = int(config["shadow_opacity"] * 1.2)
+                c_opacity = min(max(c_opacity, 100), 240)
+                
+                contact_img = Image.new("RGBA", (contact_w, contact_h), (5, 5, 5, c_opacity))
+                cx = pos_x
+                cy = pos_y + new_ph - int(contact_h * 0.5)
+                canvas.paste(contact_img, (cx, cy), mask=contact_mask)
+
+            # --- Directional Soft Shadow (Spread out) ---
+            shadow_w = int(new_pw * 1.1)
+            shadow_h = max(int(new_ph * 0.20), 10)
             
             shadow_mask = alpha.resize((shadow_w, shadow_h), Image.Resampling.LANCZOS)
-            blur_radius = max(8, int(shadow_h * 0.35))
+            blur_radius = max(10, int(shadow_h * 0.40))
             shadow_mask_blurred = shadow_mask.filter(ImageFilter.GaussianBlur(radius=blur_radius))
             
-            # Dynamic shadow opacity based on background brightness
             shadow_opacity = int(config["shadow_opacity"] * (1.0 + (255 - bg_brightness) / 512.0))
-            shadow_opacity = min(max(shadow_opacity, 50), 220)
+            shadow_opacity = min(max(shadow_opacity, 40), 200)
             
             shadow_color = (10, 10, 10, shadow_opacity)
             shadow_img = Image.new("RGBA", (shadow_w, shadow_h), shadow_color)
             
-            # Position shadow at the base of the product
-            shadow_x = pos_x
-            shadow_y = pos_y + new_ph - int(shadow_h * 0.7)
+            # Offset slightly to the right to simulate directional light from top-left
+            shadow_x = pos_x + int(new_pw * 0.05)
+            shadow_y = pos_y + new_ph - int(shadow_h * 0.6)
             
             canvas.paste(shadow_img, (shadow_x, shadow_y), mask=shadow_mask_blurred)
             
-            # Save step 3: background + shadow
-            if save_debug:
-                step3 = Image.alpha_composite(background, canvas)
-                step3.save(os.path.join(debug_dir, "3_shadow.png"), "PNG")
-        elif save_debug:
-            # Standalone shadow file is identical to background if disabled
-            background.save(os.path.join(debug_dir, "3_shadow.png"), "PNG")
-            
-        # 6. Render gloss reflections (Glossy environments/tabletop)
+        # 5. Glossy Reflections
         if use_reflections and config["reflections"] and config["reflection_opacity"] > 0:
-            print(f"[Compositor] Drawing glossy reflection with opacity {config['reflection_opacity']}...")
-            ref_h = int(new_ph * 0.25)
+            ref_h = int(new_ph * 0.3)
             ref_mask = product_adjusted.split()[3].transpose(Image.Transpose.FLIP_TOP_BOTTOM)
             ref_mask = ref_mask.resize((new_pw, ref_h), Image.Resampling.LANCZOS)
             
-            # Linear fade mask for downward mirror reflection
             fade = Image.new("L", (new_pw, ref_h))
             fade_draw = ImageDraw.Draw(fade)
             for y in range(ref_h):
@@ -195,25 +181,18 @@ def composite_product(
             combined_mask = Image.new("L", (new_pw, ref_h))
             combined_mask.paste(ref_mask, mask=fade)
             
-            # Flip product vertically and blur
             flipped = product_adjusted.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
             flipped_resized = flipped.resize((new_pw, ref_h), Image.Resampling.LANCZOS)
-            flipped_blurred = flipped_resized.filter(ImageFilter.GaussianBlur(radius=4))
+            flipped_blurred = flipped_resized.filter(ImageFilter.GaussianBlur(radius=3))
             
             ref_x = pos_x
             ref_y = pos_y + new_ph
             
             canvas.paste(flipped_blurred, (ref_x, ref_y), mask=combined_mask)
             
-        # 7. Composite product on top of the shadow/reflection layer
+        # 6. Final Composite
         canvas.paste(product_adjusted, (pos_x, pos_y), mask=product_adjusted)
-        
-        # 8. Merge and finalize
         final_image = Image.alpha_composite(background, canvas)
-        
-        # Save step 4: final composite image
-        if save_debug:
-            final_image.save(os.path.join(debug_dir, "4_final.png"), "PNG")
             
         buf = io.BytesIO()
         final_image.convert("RGB").save(buf, format="JPEG", quality=95)
@@ -226,24 +205,23 @@ def composite_product(
         return background_jpg_bytes
 
 def _apply_lighting_tint(img: Image.Image, brightness_factor: float, tint_rgb: list) -> Image.Image:
-    """Adjust image brightness and apply a subtle 4% background environment tint overlay."""
     try:
-        # Convert to RGBA
+        # 1. Adjust Brightness & Contrast
+        enhancer = ImageEnhance.Brightness(img)
+        img = enhancer.enhance(brightness_factor)
+        
+        contrast = ImageEnhance.Contrast(img)
+        # Add slight contrast punch
+        img = contrast.enhance(1.05)
+        
         rgba = img.convert("RGBA")
         r, g, b, a = rgba.split()
         
-        # Brightness scaling
-        r_adj = r.point(lambda p: min(int(p * brightness_factor), 255))
-        g_adj = g.point(lambda p: min(int(p * brightness_factor), 255))
-        b_adj = b.point(lambda p: min(int(p * brightness_factor), 255))
+        # 2. Blend an 8% tint of the background dominant color to match environment temperature
+        rgb_img = Image.merge("RGB", (r, g, b))
+        tint_layer = Image.new("RGB", rgb_img.size, (int(tint_rgb[0]), int(tint_rgb[1]), int(tint_rgb[2])))
+        tinted = Image.blend(rgb_img, tint_layer, 0.08)
         
-        adjusted = Image.merge("RGB", (r_adj, g_adj, b_adj))
-        
-        # Blend a 4% tint of the background dominant color to match the environment lighting
-        tint_layer = Image.new("RGB", adjusted.size, (int(tint_rgb[0]), int(tint_rgb[1]), int(tint_rgb[2])))
-        tinted = Image.blend(adjusted, tint_layer, 0.04)
-        
-        # Put alpha channel back
         return Image.merge("RGBA", (tinted.split()[0], tinted.split()[1], tinted.split()[2], a))
     except Exception as e:
         print(f"[Compositor] Lighting tint error: {e}")

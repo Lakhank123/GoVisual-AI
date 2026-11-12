@@ -1,8 +1,10 @@
 """
 GoVisual AI — Addon: Brand Book Service
 Generates a complete brand identity kit for a local Indian business
+Deterministic, fast, resilient, and offline-safe.
 """
-import os, httpx, json
+import os, re, httpx, json
+from typing import Optional, List, Dict, Any
 
 GEMINI_TEXT_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 GEMINI_API_KEY  = os.getenv("GEMINI_API_KEY", "")
@@ -21,6 +23,20 @@ CATEGORY_DEFAULTS = {
     "Mobile Repair":      {"colors": ["#1565c0", "#111", "#e3f2fd"],    "vibe": "quick, reliable, tech-savvy"},
 }
 
+TAGLINES_BY_CATEGORY = {
+    "Electronics":        "{name} — Smart Tech, Honest Prices",
+    "Clothing / Fashion": "{name} — Elegance in Every Thread",
+    "Food & Drinks":      "{name} — Authentic Taste, Fresh Daily",
+    "Jewellery":          "{name} — Pure Gold, Timeless Grace",
+    "Pharmacy":           "{name} — Care and Wellness You Can Trust",
+    "Home Decor":         "{name} — Beautiful Living for Modern Homes",
+    "Salon & Beauty":     "{name} — Unveil Your Natural Glow",
+    "Furniture":          "{name} — Crafted for Comfort and Life",
+    "Grocery / Kirana":   "{name} — Fresh Essentials for Every Home",
+    "Mobile Repair":      "{name} — Quick and Reliable Service",
+    "default":            "{name} — Quality You Can Trust",
+}
+
 FONTS = {
     "Electronics":        [("Poppins Bold", "Headlines"), ("Roboto Mono", "Prices & specs"), ("Inter", "Body copy")],
     "Clothing / Fashion": [("Playfair Display", "Headlines"), ("Lato", "Body"), ("Great Vibes", "Accent / luxury")],
@@ -33,7 +49,7 @@ DOS_BY_CATEGORY = {
     "Electronics":   ["Always show MRP and offer price clearly", "Add 'Warranty included' badge", "Post unboxing videos on Instagram Reels"],
     "Food & Drinks": ["Show fresh ingredients and preparation", "Post during 11 AM–1 PM (lunch) and 6–8 PM (dinner)", "Add 'Order on WhatsApp' CTA"],
     "Jewellery":     ["Shoot jewellery on model, not flat lay only", "Post during wedding seasons (Oct–Feb)", "Add 'Hallmarked gold' trust badge"],
-    "default":       ["Always show the price — Mumbai customers value transparency", "Use Hinglish or Marathi for captions", "Include WhatsApp number in every creative"],
+    "default":       ["Always show the price — local customers value transparency", "Use conversational language for captions", "Include WhatsApp number in every creative"],
 }
 
 DONTS_BY_CATEGORY = {
@@ -42,33 +58,58 @@ DONTS_BY_CATEGORY = {
     "default":       ["Don't use more than 3 colors in one creative", "Don't ignore DMs and comments", "Don't post at random times"],
 }
 
+
 class BrandBookService:
     def __init__(self):
-        self.client = httpx.AsyncClient(timeout=30)
+        self.client = httpx.AsyncClient(timeout=10)
+
+    def _resolve_category(self, cat: Optional[str]) -> str:
+        """Resolve category flexibly handling slashes, spaces, and case differences."""
+        if not cat or not cat.strip():
+            return "Grocery / Kirana"
+        clean = re.sub(r"[^a-zA-Z]", "", cat).lower()
+        for standard_cat in CATEGORY_DEFAULTS.keys():
+            std_clean = re.sub(r"[^a-zA-Z]", "", standard_cat).lower()
+            if clean == std_clean or clean in std_clean or std_clean in clean:
+                return standard_cat
+        return "Grocery / Kirana"
 
     async def generate(
         self,
         business_name: str,
         category: str,
-        tagline: str | None,
+        tagline: str | None = None,
         existing_colors: list[str] | None = None,
         logo_colors: list[str] | None = None,
         captions_text: str | None = None,
         post_images_count: int = 0,
         whatsapp: str | None = None,
-        instagram: str | None = None
+        instagram: str | None = None,
+        city: str | None = None,
     ) -> dict:
-        defaults  = CATEGORY_DEFAULTS.get(category, CATEGORY_DEFAULTS["Grocery / Kirana"])
-        fonts     = FONTS.get(category, FONTS["default"])
-        dos       = DOS_BY_CATEGORY.get(category, DOS_BY_CATEGORY["default"])
-        donts     = DONTS_BY_CATEGORY.get(category, DONTS_BY_CATEGORY["default"])
+        clean_name = (business_name or "").strip() or "My Brand"
+        clean_cat  = (category or "").strip() or "Clothing / Fashion"
+        resolved_cat = self._resolve_category(clean_cat)
 
-        # Use extracted colors if available, else category defaults
-        colors_hex = logo_colors if logo_colors else (existing_colors if existing_colors else defaults["colors"])
+        defaults = CATEGORY_DEFAULTS.get(resolved_cat, CATEGORY_DEFAULTS["Grocery / Kirana"])
+        fonts    = FONTS.get(resolved_cat, FONTS["default"])
+        dos      = DOS_BY_CATEGORY.get(resolved_cat, DOS_BY_CATEGORY["default"])
+        donts    = DONTS_BY_CATEGORY.get(resolved_cat, DONTS_BY_CATEGORY["default"])
 
-        # Generate tagline via Gemini if not provided
-        if not tagline:
-            tagline = await self._generate_tagline(business_name, category, defaults["vibe"])
+        # Use extracted logo colors if available, else existing colors, else defaults
+        candidate_colors = logo_colors if (logo_colors and len(logo_colors) > 0) else (
+            existing_colors if (existing_colors and len(existing_colors) > 0) else defaults["colors"]
+        )
+        
+        # Ensure at least 3 valid colors exist
+        colors_hex = list(candidate_colors) if candidate_colors else []
+        for def_c in defaults["colors"]:
+            if len(colors_hex) < 3:
+                colors_hex.append(def_c)
+
+        # Generate tagline if not provided
+        if not tagline or not tagline.strip():
+            tagline = await self._generate_tagline(clean_name, resolved_cat, defaults["vibe"])
 
         color_names = ["Primary", "Secondary", "Accent"]
         color_uses  = [
@@ -78,30 +119,31 @@ class BrandBookService:
         ]
 
         caption_analysis = await self._analyse_captions(captions_text)
-        voice_words = caption_analysis.get("voice_words", self._voice_words(category))
+        voice_words = caption_analysis.get("voice_words") or self._voice_words(resolved_cat)
 
         return {
-            "businessName": business_name,
-            "category":     category,
+            "businessName": clean_name,
+            "category":     clean_cat,
             "tagline":      tagline,
             "vibe":         defaults["vibe"],
             "colors": [
-                {"hex": h, "name": color_names[i], "use": color_uses[i]}
-                for i, h in enumerate(colors_hex[:3])
+                {"hex": colors_hex[i] if i < len(colors_hex) else defaults["colors"][i], "name": color_names[i], "use": color_uses[i]}
+                for i in range(3)
             ],
             "fonts": [
                 {"name": f[0], "use": f[1], "style": "Google Fonts — free to use"}
                 for f in fonts
             ],
-            "voiceWords": voice_words[:5],
+            "voiceWords": voice_words[:5] if voice_words else ["Trustworthy", "Affordable", "Local", "Premium", "Fast"],
             "doList":     dos,
             "dontList":   donts,
-            "postingTips": self._posting_tips(category),
-            "hashtagSets": self._hashtags(business_name, category),
-            "logoColors": logo_colors or [],
+            "postingTips": self._posting_tips(resolved_cat),
+            "hashtagSets": self._hashtags(clean_name, clean_cat, city),
+            "city":        city or "Local",
+            "logoColors":  logo_colors or [],
             "captionAnalysis": caption_analysis,
-            "whatsapp": whatsapp,
-            "instagram": instagram,
+            "whatsapp":    whatsapp or "",
+            "instagram":   instagram or "",
         }
 
     async def _analyse_captions(self, captions_text: str | None) -> dict:
@@ -111,122 +153,35 @@ class BrandBookService:
             "themes": ["Products", "Offers", "Local"],
             "voice_words": ["Trustworthy", "Affordable", "Local", "Premium", "Fast"]
         }
-        if not OPENAI_API_KEY and (not GEMINI_API_KEY or not captions_text):
+        if not captions_text or not captions_text.strip():
             return default_res
-        if not captions_text:
-            return default_res
-        
-        # If OpenAI is present, use OpenAI
-        if OPENAI_API_KEY:
-            try:
-                headers = {
-                    "Authorization": f"Bearer {OPENAI_API_KEY}",
-                    "Content-Type": "application/json"
-                }
-                payload = {
-                    "model": "gpt-4o-mini",
-                    "messages": [
-                        {"role": "user", "content": (
-                            f"Analyse these social media captions from an Indian local business. "
-                            f"Return a JSON object with these exact fields: "
-                            f"\"tone\" (one of: Friendly, Professional, Festive, Casual, Energetic), "
-                            f"\"avg_length\" (one of: Short, Medium, Long), "
-                            f"\"themes\" (array of 3 strings describing content themes), "
-                            f"\"voice_words\" (array of 5 adjectives describing brand voice). "
-                            f"Captions: {captions_text}"
-                        )}
-                    ],
-                    "response_format": {"type": "json_object"}
-                }
-                resp = await self.client.post("https://api.openai.com/v1/chat/completions", json=payload, headers=headers)
-                if resp.status_code == 200:
-                    text = resp.json()["choices"][0]["message"]["content"].strip()
-                    result = json.loads(text)
-                    if all(k in result for k in ["tone", "avg_length", "themes", "voice_words"]):
-                        return result
-            except Exception as e:
-                print(f"Error in _analyse_captions with OpenAI: {e}")
 
-        # Fallback to Gemini
-        if GEMINI_API_KEY:
-            try:
-                payload = {
-                    "contents": [{
-                        "parts": [{
-                            "text": (
-                                f"Analyse these social media captions from an Indian local business. "
-                                f"Return a JSON object with these fields: "
-                                f"tone (one of: Friendly, Professional, Festive, Casual, Energetic), "
-                                f"avg_length (one of: Short, Medium, Long), "
-                                f"themes (array of 3 strings describing content themes), "
-                                f"voice_words (array of 5 adjectives describing brand voice). "
-                                f"Captions: {captions_text}"
-                            )
-                        }]
-                    }],
-                    "generationConfig": {
-                        "responseMimeType": "application/json"
-                    }
-                }
-                resp = await self.client.post(
-                    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
-                    json=payload,
-                    headers={"x-goog-api-key": GEMINI_API_KEY}
-                )
-                if resp.status_code == 200:
-                    text = resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-                    result = json.loads(text)
-                    if all(k in result for k in ["tone", "avg_length", "themes", "voice_words"]):
-                        return result
-            except Exception as e:
-                print(f"Error in _analyse_captions with Gemini: {e}")
+        # Fast deterministic keyword analysis
+        text_lower = captions_text.lower()
+        tone = "Friendly"
+        if any(k in text_lower for k in ["offer", "sale", "discount", "off", "deal", "limited"]):
+            tone = "Promotional"
+        elif any(k in text_lower for k in ["diwali", "festive", "celebrate", "pooja", "eid", "christmas"]):
+            tone = "Festive"
+        elif any(k in text_lower for k in ["luxury", "handcrafted", "pure", "gold", "silk", "bespoke"]):
+            tone = "Luxurious"
+        elif any(k in text_lower for k in ["fast", "urgent", "hurry", "quick", "today"]):
+            tone = "Energetic"
 
-        return default_res
+        words = re.findall(r"\b[A-Za-z]{4,}\b", captions_text)
+        avg_len = "Short" if len(words) < 20 else ("Medium" if len(words) < 60 else "Long")
+
+        return {
+            "tone": tone,
+            "avg_length": avg_len,
+            "themes": ["Products", "Offers", "Craftsmanship"],
+            "voice_words": ["Trustworthy", "Affordable", "Authentic", "Local", "Quality"]
+        }
 
     async def _generate_tagline(self, name: str, category: str, vibe: str) -> str:
-        if not OPENAI_API_KEY and not GEMINI_API_KEY:
-            return f"{name} — Quality You Can Trust"
-
-        # If OpenAI is present, use OpenAI
-        if OPENAI_API_KEY:
-            try:
-                headers = {
-                    "Authorization": f"Bearer {OPENAI_API_KEY}",
-                    "Content-Type": "application/json"
-                }
-                payload = {
-                    "model": "gpt-4o-mini",
-                    "messages": [
-                        {"role": "user", "content": (
-                            f"Generate a short, catchy tagline for an Indian local business. "
-                            f"Business name: {name}. Category: {category}. Vibe: {vibe}. "
-                            f"The tagline should be 5-10 words, optionally mixing English and Hindi. "
-                            f"Return only the tagline, nothing else."
-                        )}
-                    ]
-                }
-                resp = await self.client.post("https://api.openai.com/v1/chat/completions", json=payload, headers=headers)
-                if resp.status_code == 200:
-                    return resp.json()["choices"][0]["message"]["content"].strip().strip('"')
-            except Exception as e:
-                print(f"Error in _generate_tagline with OpenAI: {e}")
-
-        # Fallback to Gemini
-        if GEMINI_API_KEY:
-            try:
-                payload = {"contents": [{"parts": [{"text":
-                    f"Generate a short, catchy tagline for an Indian local business. "
-                    f"Business name: {name}. Category: {category}. Vibe: {vibe}. "
-                    f"The tagline should be 5-10 words, optionally mixing English and Hindi. "
-                    f"Return only the tagline, nothing else."
-                }]}]}
-                resp = await self.client.post(GEMINI_TEXT_URL, json=payload, headers={"x-goog-api-key": GEMINI_API_KEY})
-                data = resp.json()
-                return data["candidates"][0]["content"]["parts"][0]["text"].strip().strip('"')
-            except Exception as e:
-                print(f"Error in _generate_tagline with Gemini: {e}")
-
-        return f"{name} — Trusted by Mumbai"
+        """Deterministic offline tagline generation with clean formatting."""
+        template = TAGLINES_BY_CATEGORY.get(category, TAGLINES_BY_CATEGORY["default"])
+        return template.format(name=name)
 
     def _voice_words(self, category: str) -> list[str]:
         mapping = {
@@ -248,17 +203,19 @@ class BrandBookService:
             "Use GoVisual AI to create all 4 posts in under 10 minutes",
         ]
 
-    def _hashtags(self, name: str, category: str) -> dict:
-        city_tags    = "#Mumbai #MumbaiShopping #MumbaiLocal #MumbaiBusiness #LocalMumbai"
+    def _hashtags(self, name: str, category: str, city: str | None = None) -> dict:
+        clean_city = re.sub(r"[^a-zA-Z0-9]", "", city or "Local") or "Local"
+        city_tags = f"#{clean_city} #{clean_city}Shopping #{clean_city}Local #{clean_city}Business #ShopLocal"
         cat_tags_map = {
             "Electronics":        "#Electronics #MobileShop #Gadgets #TechDeals #ElectronicsShop",
             "Clothing / Fashion": "#Fashion #IndianFashion #Boutique #StyleIndia #EthnicWear",
-            "Food & Drinks":      "#MumbaiFoodie #StreetFood #HomeMade #FoodLovers #MumbaiFood",
+            "Food & Drinks":      f"#{clean_city}Foodie #StreetFood #HomeMade #FoodLovers #LocalFood",
             "Jewellery":          "#Jewellery #GoldJewellery #BridalJewellery #IndianJewellery #Hallmark",
-            "default":            "#ShopLocal #SmallBusiness #MumbaiSMB #SupportLocal #IndianBusiness",
+            "default":            f"#ShopLocal #SmallBusiness #{clean_city}SMB #SupportLocal #LocalBusiness",
         }
         cat_tags  = cat_tags_map.get(category, cat_tags_map["default"])
-        shop_tag  = f"#{name.replace(' ', '').replace('.', '')}"
+        clean_shop = re.sub(r"[^a-zA-Z0-9]", "", name) or "MyBrand"
+        shop_tag  = f"#{clean_shop}"
         return {
             "local":    city_tags,
             "category": cat_tags,

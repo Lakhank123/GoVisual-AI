@@ -2,9 +2,11 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useStore } from '@/lib/store'
+import { useDemoSession } from '@/components/providers/demo-session-provider'
 import { motion, AnimatePresence } from 'framer-motion'
 import Navbar from '@/components/Navbar'
-import { Download, Share2, X, Copy, Check } from 'lucide-react'
+import { Download, Share2, X, Copy, Check, Bookmark, MessageCircle, CheckCircle2 } from 'lucide-react'
+import { downloadAsPng, shareToWhatsAppContact } from '@/lib/imageDownload'
 
 const LOADING_STEPS = [
   'Reading your brand...',
@@ -17,9 +19,9 @@ const LOADING_STEPS = [
 ]
 
 const TIER_BADGES: Record<string, { bg: string; text: string }> = {
-  Basic:        { bg: 'bg-[#39ff14]',         text: 'text-black' },
+  Basic:        { bg: 'bg-[#E8B66F]',         text: 'text-[#0B0907]' },
   Professional: { bg: 'bg-white',             text: 'text-black' },
-  Creative:     { bg: 'bg-[#0d160d] border border-[#39ff14]', text: 'text-[#39ff14]' },
+  Creative:     { bg: 'bg-[#21170F] border border-[#E8B66F]', text: 'text-[#E8B66F]' },
 }
 
 const LANGUAGES = ['English', 'Hindi', 'Marathi', 'Hinglish']
@@ -27,11 +29,17 @@ const LANGUAGES = ['English', 'Hindi', 'Marathi', 'Hinglish']
 export default function ResultsPage() {
   const router = useRouter()
   const { results, caption, brand } = useStore()
+  const { addAssetToLibrary, addRecentWork } = useDemoSession()
   const [loadStep, setLoadStep] = useState(0)
   const [timedOut, setTimedOut] = useState(false)
   const [fullscreenImg, setFullscreenImg] = useState<string | null>(null)
   const [captionLang, setCaptionLang] = useState('English')
   const [copied, setCopied] = useState(false)
+  const [savedMap, setSavedMap] = useState<Record<number, boolean>>({})
+  const [saveFeedback, setSaveFeedback] = useState<Record<number, string>>({})
+  const [downloadingIdx, setDownloadingIdx] = useState<Record<number, boolean>>({})
+  const [whatsAppModalImg, setWhatsAppModalImg] = useState<{ url: string; label: string; index: number } | null>(null)
+  const [statusDone, setStatusDone] = useState(false)
   const isLoading = results.length === 0 && !timedOut
 
   useEffect(() => {
@@ -45,12 +53,69 @@ export default function ResultsPage() {
     }
   }, [])
 
-  async function handleDownload(url: string, label: string) {
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `GoVisual_${label}.jpg`
-    a.target = '_blank'
-    a.click()
+  async function handleDownload(url: string, label: string, index: number) {
+    setDownloadingIdx(prev => ({ ...prev, [index]: true }))
+    try {
+      const cleanLabel = (label || 'creative').toLowerCase().replace(/[^a-z0-9]/g, '_')
+      const brandName = (brand?.name || 'govisual').toLowerCase().replace(/[^a-z0-9]/g, '_')
+      const filename = `${brandName}_${cleanLabel}.png`
+      await downloadAsPng(url, filename)
+    } catch (e) {
+      console.error("PNG download error:", e)
+      window.open(url, '_blank')
+    } finally {
+      setDownloadingIdx(prev => ({ ...prev, [index]: false }))
+    }
+  }
+
+  function handleSaveToLibrary(img: any, index: number) {
+    if (savedMap[index]) return
+    const pTitle = brand?.name ? `${brand.name} Creative` : "Creative"
+    const label = img.strategy_name || img.label || `Strategy ${index + 1}`
+
+    addAssetToLibrary({
+      id: `creative_${Date.now()}_${index}`,
+      type: "creative",
+      url: img.url,
+      metadata: {
+        title: `${pTitle} — ${label}`,
+        format: "image/png",
+        caption: caption,
+      },
+      createdAt: new Date().toISOString(),
+    })
+
+    addRecentWork({
+      type: "creative",
+      url: img.url,
+      label: `${pTitle} (${label})`,
+    })
+
+    setSavedMap(prev => ({ ...prev, [index]: true }))
+    setSaveFeedback(prev => ({ ...prev, [index]: "Saved ✓" }))
+  }
+
+  async function handleWhatsAppContactShare() {
+    if (!whatsAppModalImg) return
+    const brandName = brand?.name || 'Our Brand'
+    await shareToWhatsAppContact(whatsAppModalImg.url, caption, `${brandName} ${whatsAppModalImg.label}`)
+  }
+
+  async function handleWhatsAppStatusShare() {
+    if (!whatsAppModalImg) return
+    const cleanLabel = (whatsAppModalImg.label || 'creative').toLowerCase().replace(/[^a-z0-9]/g, '_')
+    const brandName = (brand?.name || 'govisual').toLowerCase().replace(/[^a-z0-9]/g, '_')
+    const filename = `${brandName}_${cleanLabel}.png`
+
+    await downloadAsPng(whatsAppModalImg.url, filename)
+
+    if (caption && typeof navigator !== "undefined") {
+      try {
+        await navigator.clipboard.writeText(caption)
+      } catch {}
+    }
+
+    setStatusDone(true)
   }
 
   async function handleShare(url: string) {
@@ -79,19 +144,19 @@ export default function ResultsPage() {
     return (
       <>
         <Navbar />
-        <main className="min-h-screen bg-[#060a06] flex items-center justify-center">
+        <main className="min-h-screen bg-[#0B0907] flex items-center justify-center">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             className="text-center p-8"
           >
-            <div className="w-16 h-16 mx-auto mb-6 rounded-full border-2 border-[#ff6b6b] flex items-center justify-center">
-              <X className="text-[#ff6b6b]" size={28} />
+            <div className="w-16 h-16 mx-auto mb-6 rounded-full border-2 border-[#ef4444] flex items-center justify-center">
+              <X className="text-[#ef4444]" size={28} />
             </div>
-            <p className="text-white text-lg font-bold mb-2">Generation took too long.</p>
-            <p className="text-[#3a5a3a] text-sm mb-8">Check your API keys and try again.</p>
+            <p className="text-[#F7F3ED] text-lg font-bold mb-2">Generation took too long.</p>
+            <p className="text-[#B9AA99] text-sm mb-8">Check your API keys and try again.</p>
             <button onClick={() => router.push('/wizard')}
-              className="bg-[#39ff14] text-black font-bold px-8 py-3 rounded-xl hover:opacity-90 transition-opacity cursor-pointer">
+              className="bg-[#E8B66F] text-[#0B0907] font-bold px-8 py-3 rounded-xl hover:bg-[#F3CB8D] transition-colors cursor-pointer">
               Try again
             </button>
           </motion.div>
@@ -103,30 +168,30 @@ export default function ResultsPage() {
   /* ─── Loading state ─── */
   if (isLoading) {
     return (
-      <main className="min-h-screen bg-[#060a06] flex items-center justify-center">
+      <main className="min-h-screen bg-[#0B0907] flex items-center justify-center">
         <div className="text-center">
           {/* Animated pulsing orb */}
           <div className="relative w-24 h-24 mx-auto mb-8">
             <motion.div
-              className="absolute inset-0 rounded-full bg-gradient-to-br from-[#39ff14] to-[#0D9488] blur-xl opacity-40"
+              className="absolute inset-0 rounded-full bg-gradient-to-br from-[#E8B66F] to-[#6F452C] blur-xl opacity-40"
               animate={{ scale: [1, 1.3, 1] }}
               transition={{ duration: 2, repeat: Infinity }}
             />
             <motion.div
-              className="absolute inset-2 rounded-full bg-gradient-to-br from-[#39ff14] to-[#0D9488] blur-md opacity-60"
+              className="absolute inset-2 rounded-full bg-gradient-to-br from-[#E8B66F] to-[#6F452C] blur-md opacity-60"
               animate={{ scale: [1, 1.15, 1] }}
               transition={{ duration: 2, repeat: Infinity, delay: 0.2 }}
             />
-            <div className="absolute inset-4 rounded-full bg-[#39ff14]/20 flex items-center justify-center">
+            <div className="absolute inset-4 rounded-full bg-[rgba(232,182,111,0.2)] flex items-center justify-center">
               <motion.div
-                className="w-6 h-6 rounded-full bg-[#39ff14]"
+                className="w-6 h-6 rounded-full bg-[#E8B66F]"
                 animate={{ scale: [0.8, 1, 0.8] }}
                 transition={{ duration: 1.5, repeat: Infinity }}
               />
             </div>
           </div>
 
-          <h2 className="text-white text-xl font-bold mb-3">Creating your creatives</h2>
+          <h2 className="text-[#F7F3ED] text-xl font-bold mb-3">Creating your creatives</h2>
 
           <AnimatePresence mode="wait">
             <motion.p
@@ -135,13 +200,13 @@ export default function ResultsPage() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -5 }}
               transition={{ duration: 0.3 }}
-              className="text-[#39ff14] text-sm font-medium mb-2"
+              className="text-[#E8B66F] text-sm font-medium mb-2"
             >
               {LOADING_STEPS[loadStep]}
             </motion.p>
           </AnimatePresence>
 
-          <p className="text-[#3a5a3a] text-xs">This takes 15-30 seconds</p>
+          <p className="text-[#B9AA99] text-xs">This takes 15-30 seconds</p>
         </div>
       </main>
     )
@@ -151,7 +216,7 @@ export default function ResultsPage() {
   return (
     <>
       <Navbar />
-      <main className="min-h-screen bg-[#060a06] px-4 py-24">
+      <main className="min-h-screen bg-[#0B0907] px-4 py-24">
         <div className="max-w-2xl mx-auto">
           {/* Header */}
           <motion.div
@@ -159,18 +224,20 @@ export default function ResultsPage() {
             animate={{ opacity: 1, y: 0 }}
             className="mb-8"
           >
-            <h2 className="font-space-grotesk text-2xl font-bold text-white mb-1">
+            <h2 className="font-space-grotesk text-2xl font-bold text-[#F7F3ED] mb-1">
               Your creatives are ready! ✨
             </h2>
-            <p className="text-[#3a5a3a] text-sm">
+            <p className="text-[#B9AA99] text-sm">
               3 AI-generated images for {brand?.name || 'your brand'}
             </p>
           </motion.div>
 
           {/* Image Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
             {results.map((img, i) => {
-              const badge = TIER_BADGES[img.label] || TIER_BADGES.Basic
+              const isRecommended = img.is_recommended;
+              const strategy = img.strategy_name || img.label || `Strategy ${i+1}`
+              
               return (
                 <motion.div
                   key={i}
@@ -178,43 +245,96 @@ export default function ResultsPage() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.15 }}
                   whileHover={{ scale: 1.01 }}
-                  className={`bg-[#0d160d] rounded-xl overflow-hidden transition-all duration-200 ${
-                    i === 1 ? 'border-2 border-[#39ff14] shadow-[0_0_20px_rgba(57,255,20,0.1)]' : 'border border-[#1a2a1a]'
+                  className={`bg-[#21170F] rounded-xl overflow-hidden transition-all duration-200 ${
+                    isRecommended ? 'border-2 border-[#E8B66F] shadow-[0_0_20px_rgba(232,182,111,0.15)]' : 'border border-[#3B2B1E]'
                   }`}
                 >
                   <div className="relative cursor-pointer" onClick={() => setFullscreenImg(img.url)}>
                     <img
                       src={img.url}
-                      alt={img.label}
+                      alt={strategy}
                       className="w-full aspect-square object-cover"
                       onError={(e) => {
-                        (e.target as HTMLImageElement).src = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Crect fill='%230d160d' width='400' height='400'/%3E%3Ctext x='50%25' y='50%25' fill='%2339ff14' text-anchor='middle' dy='.3em'%3EGoVisual AI%3C/text%3E%3C/svg%3E`
+                        (e.target as HTMLImageElement).src = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Crect fill='%2321170F' width='400' height='400'/%3E%3Ctext x='50%25' y='50%25' fill='%23E8B66F' text-anchor='middle' dy='.3em'%3EGoVisual AI%3C/text%3E%3C/svg%3E`
                       }}
                     />
-                    <span className={`absolute top-2 left-2 ${badge.bg} ${badge.text} text-[10px] font-extrabold px-2 py-0.5 rounded`}>
-                      {img.label}
+                    <span className="absolute top-2 left-2 bg-[#E8B66F] text-[#0B0907] text-[10px] font-extrabold px-2 py-0.5 rounded">
+                      Candidate {i+1}
                     </span>
                   </div>
-                  <div className="p-3 flex gap-2">
-                    <button
-                      onClick={() => handleDownload(img.url, img.label)}
-                      className="flex-1 flex items-center justify-center gap-1.5 border border-[#1a2a1a] text-[#3a5a3a] text-xs py-2 rounded-lg
-                                 hover:border-[#39ff14] hover:text-[#39ff14] transition-colors duration-150 cursor-pointer"
-                    >
-                      <Download size={13} /> Download
-                    </button>
-                    <button
-                      onClick={() => handleShare(img.url)}
-                      className="flex-1 flex items-center justify-center gap-1.5 bg-[#39ff14] text-black text-xs font-bold py-2 rounded-lg
-                                 hover:opacity-90 transition-opacity duration-150 cursor-pointer"
-                    >
-                      <Share2 size={13} /> Share
-                    </button>
+                  <div className="p-3 border-b border-[#3B2B1E]">
+                    <p className="text-xs font-bold text-[#F7F3ED] mb-1">{strategy}</p>
+                    <p className="text-[10px] text-[#B9AA99] truncate">{img.prompt_used || img.promptPreview || "No prompt preview"}</p>
+                    {img.status === "FAILED" && <p className="text-[10px] text-red-500 mt-1">Generation Failed</p>}
+                  </div>
+                  <div className="p-3 space-y-2">
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleSaveToLibrary(img, i)}
+                        disabled={savedMap[i]}
+                        className={`flex-1 flex items-center justify-center gap-1.5 text-xs py-2 rounded-lg font-semibold transition-colors duration-150 cursor-pointer ${
+                          savedMap[i]
+                            ? 'bg-emerald-950/60 border border-emerald-700 text-emerald-400'
+                            : 'border border-[#3B2B1E] text-white hover:border-[#E8B66F] hover:text-[#E8B66F]'
+                        }`}
+                      >
+                        <Bookmark size={13} /> {saveFeedback[i] || 'Save to Library'}
+                      </button>
+                      <button
+                        onClick={() => handleDownload(img.url, strategy, i)}
+                        disabled={downloadingIdx[i]}
+                        className="flex-1 flex items-center justify-center gap-1.5 border border-[#3B2B1E] text-[#B9AA99] text-xs py-2 rounded-lg
+                                   hover:border-[#E8B66F] hover:text-[#E8B66F] transition-colors duration-150 cursor-pointer disabled:opacity-50"
+                      >
+                        <Download size={13} /> {downloadingIdx[i] ? 'Exporting...' : 'Download PNG'}
+                      </button>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          setWhatsAppModalImg({ url: img.url, label: strategy, index: i });
+                          setStatusDone(false);
+                        }}
+                        className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-950/40 border border-emerald-800/40 text-emerald-400 text-xs font-semibold py-1.5 rounded-lg
+                                   hover:bg-emerald-900/40 hover:border-emerald-600 transition-colors duration-150 cursor-pointer"
+                      >
+                        <MessageCircle size={13} /> WhatsApp
+                      </button>
+                      <button
+                        onClick={() => handleShare(img.url)}
+                        className="flex-1 flex items-center justify-center gap-1.5 bg-[#E8B66F] text-[#0B0907] text-xs font-bold py-1.5 rounded-lg
+                                   hover:bg-[#F3CB8D] transition-colors duration-150 cursor-pointer"
+                      >
+                        <Share2 size={13} /> Share Link
+                      </button>
+                    </div>
                   </div>
                 </motion.div>
               )
             })}
           </div>
+
+          {/* AI Recommendation */}
+          {results.some(r => r.is_recommended) && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4 }}
+              className="bg-[#21170F] border border-[#E8B66F] rounded-xl p-5 mb-6 shadow-[0_0_15px_rgba(232,182,111,0.15)]"
+            >
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-xl text-[#E8B66F]">★</span>
+                <span className="text-[#E8B66F] text-sm font-bold">GO VISUAL AI RECOMMENDATION</span>
+              </div>
+              <p className="text-[#F7F3ED] text-sm mb-4">
+                We recommend <strong>Candidate {results.findIndex(r => r.is_recommended) + 1}</strong> because it scored highest across our aesthetic and brand-consistency metrics.
+              </p>
+              <p className="text-[#B9AA99] text-xs italic">
+                "{results.find(r => r.is_recommended)?.recommendation_reason || "Based on automated analysis of image composition and product preservation."}"
+              </p>
+            </motion.div>
+          )}
 
           {/* Caption Card */}
           {caption && (
@@ -222,13 +342,13 @@ export default function ResultsPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.5 }}
-              className="bg-[#0d160d] border border-[#1a2a1a] rounded-xl p-5 mb-6"
+              className="bg-[#21170F] border border-[#3B2B1E] rounded-xl p-5 mb-6"
             >
               <div className="flex justify-between items-center mb-3">
-                <span className="text-white text-sm font-semibold">Caption</span>
+                <span className="text-[#F7F3ED] text-sm font-semibold">Caption</span>
                 <button
                   onClick={handleCopyCaption}
-                  className="flex items-center gap-1 text-[#39ff14] text-xs hover:opacity-80 transition-opacity cursor-pointer"
+                  className="flex items-center gap-1 text-[#E8B66F] text-xs hover:opacity-80 transition-opacity cursor-pointer"
                 >
                   {copied ? <><Check size={13} /> Copied!</> : <><Copy size={13} /> Copy</>}
                 </button>
@@ -242,8 +362,8 @@ export default function ResultsPage() {
                     onClick={() => setCaptionLang(lang)}
                     className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-150 cursor-pointer ${
                       captionLang === lang
-                        ? 'bg-[#39ff14] text-black'
-                        : 'text-[#2a4a2a] hover:text-[#39ff14] border border-[#1a2a1a]'
+                        ? 'bg-[#E8B66F] text-[#0B0907]'
+                        : 'text-[#B9AA99] hover:text-[#E8B66F] border border-[#3B2B1E]'
                     }`}
                   >
                     {lang}
@@ -251,7 +371,7 @@ export default function ResultsPage() {
                 ))}
               </div>
 
-              <p className="text-[#3a5a3a] text-sm leading-relaxed whitespace-pre-line">{caption}</p>
+              <p className="text-[#B9AA99] text-sm leading-relaxed whitespace-pre-line">{caption}</p>
             </motion.div>
           )}
 
@@ -264,15 +384,15 @@ export default function ResultsPage() {
           >
             <button
               onClick={() => router.push('/wizard')}
-              className="flex-1 border border-[#1a2a1a] text-[#3a5a3a] text-sm font-medium py-3 rounded-xl
-                         hover:border-[#39ff14] hover:text-[#39ff14] transition-colors duration-150 cursor-pointer"
+              className="flex-1 border border-[#3B2B1E] text-[#B9AA99] text-sm font-medium py-3 rounded-xl
+                         hover:border-[#E8B66F] hover:text-[#E8B66F] transition-colors duration-150 cursor-pointer"
             >
               Create another
             </button>
             <button
               onClick={() => alert('Upgrade coming soon!')}
-              className="flex-1 bg-white text-black text-sm font-bold py-3 rounded-xl
-                         hover:bg-gray-100 transition-colors duration-150 cursor-pointer"
+              className="flex-1 bg-[#E8B66F] text-[#0B0907] text-sm font-bold py-3 rounded-xl
+                         hover:bg-[#F3CB8D] transition-colors duration-150 cursor-pointer"
             >
               Remove watermark
             </button>
@@ -312,6 +432,107 @@ export default function ResultsPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* WhatsApp Share Modal */}
+      {whatsAppModalImg && (
+        <div
+          onClick={() => {
+            setWhatsAppModalImg(null);
+            setStatusDone(false);
+          }}
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 cursor-pointer"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md bg-[#14100D] border border-[#3B2B1E] rounded-2xl p-6 sm:p-7 shadow-2xl space-y-5"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-emerald-950/80 border border-emerald-700/60 flex items-center justify-center text-emerald-400">
+                  <MessageCircle size={18} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-base">Share on WhatsApp</h3>
+                  <p className="text-[11px] text-[#B9AA99]">{whatsAppModalImg.label}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setWhatsAppModalImg(null);
+                  setStatusDone(false);
+                }}
+                className="p-1 rounded-lg text-[#8A7B6D] hover:text-white"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {/* Option 1: Contact / Group Share */}
+              <div className="p-4 rounded-xl bg-[#0B0907] border border-[#3B2B1E] hover:border-emerald-700/50 transition-all">
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <div>
+                    <h4 className="font-semibold text-white text-xs">Option 1: Contact or Group Chat</h4>
+                    <p className="text-[11px] text-[#8A7B6D] mt-0.5">
+                      Sends your creative image and marketing caption directly to a customer, client, or group.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleWhatsAppContactShare}
+                  className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                >
+                  <MessageCircle size={15} />
+                  <span>Share with Contact / Group</span>
+                </button>
+              </div>
+
+              {/* Option 2: WhatsApp Status */}
+              <div className="p-4 rounded-xl bg-[#0B0907] border border-[#3B2B1E] hover:border-[#E8B66F]/40 transition-all">
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <div>
+                    <h4 className="font-semibold text-white text-xs">Option 2: WhatsApp Status</h4>
+                    <p className="text-[11px] text-[#8A7B6D] mt-0.5">
+                      WhatsApp does not allow 3rd-party web apps to publish Status automatically. We export your high-resolution PNG and copy your marketing caption for instant 1-tap posting.
+                    </p>
+                  </div>
+                </div>
+
+                {statusDone ? (
+                  <div className="p-3 rounded-lg bg-emerald-950/40 border border-emerald-700/50 text-xs text-emerald-300 space-y-1">
+                    <p className="font-bold flex items-center gap-1.5">
+                      <CheckCircle2 size={14} /> PNG downloaded & caption copied!
+                    </p>
+                    <p className="text-[11px] text-emerald-400/80">
+                      Now open WhatsApp &gt; Updates &gt; Tap "My Status" &gt; select your downloaded PNG and paste your caption.
+                    </p>
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleWhatsAppStatusShare}
+                    className="w-full py-2.5 rounded-xl bg-[#21170F] border border-[#3B2B1E] hover:border-[#E8B66F] text-[#E8B66F] font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                  >
+                    <Download size={15} />
+                    <span>Download PNG &amp; Copy Caption for Status</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => {
+                  setWhatsAppModalImg(null);
+                  setStatusDone(false);
+                }}
+                className="px-4 py-2 rounded-xl border border-[#3B2B1E] text-xs text-[#B9AA99] hover:text-white"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }

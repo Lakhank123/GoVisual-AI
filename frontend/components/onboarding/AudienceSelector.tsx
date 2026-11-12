@@ -27,7 +27,7 @@ export default function AudienceSelector() {
       <div className="lg:col-span-2 space-y-6">
         <div>
           <h2 className="font-space-grotesk text-2xl font-bold text-white mb-2">Target Audience</h2>
-          <p className="text-[#3a5a3a] mb-6">Select the groups most likely to buy from you. We've pre-selected recommendations based on your brand analysis.</p>
+          <p className="text-[#B9AA99] mb-6">Select the groups most likely to buy from you. We've pre-selected recommendations based on your brand analysis.</p>
           
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {ALL_SEGMENTS.map(seg => (
@@ -43,10 +43,10 @@ export default function AudienceSelector() {
         </div>
 
         <div className="flex gap-4 pt-4">
-          <button onClick={() => setStep(5)} className="w-1/3 bg-[#0d160d] border border-[#1a2a1a] text-white py-4 rounded-xl hover:bg-[#1a2a1a] transition-all font-semibold">
+          <button onClick={() => setStep(4)} className="w-1/3 bg-[#21170F] border border-[#3B2B1E] text-white py-4 rounded-xl hover:bg-[#2B1E14] transition-all font-semibold">
             Back
           </button>
-          <button onClick={() => setStep(7)} className="w-2/3 bg-[#39ff14] text-black font-bold py-4 rounded-xl hover:opacity-90 transition-all cursor-pointer">
+          <button onClick={() => setStep(7)} className="w-2/3 bg-[#E8B66F] text-[#0B0907] font-bold py-4 rounded-xl hover:bg-[#F3CB8D] transition-all cursor-pointer">
             Preview Brand Brain
           </button>
         </div>

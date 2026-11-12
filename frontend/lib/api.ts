@@ -1,4 +1,5 @@
 const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000'
+import { supabase, getSafeSession } from './supabase'
 
 export async function searchBrand(q: string, city: string) {
   try {
@@ -56,10 +57,79 @@ export async function generateCreatives(
   if (referenceImageUrl) {
     form.append('reference_image_url', referenceImageUrl)
   }
-  const r = await fetch(`${BASE}/generate`, { method: 'POST', body: form })
+
+  // Get Supabase token
+  const session = await getSafeSession()
+  const token = session?.access_token
+
+  const headers: HeadersInit = {}
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+
+  const r = await fetch(`${BASE}/generate`, { 
+    method: 'POST', 
+    body: form,
+    headers
+  })
+  
   if (!r.ok) {
     const errText = await r.text().catch(() => '')
     console.error(`Generate failed: HTTP ${r.status}`, errText)
+    throw new Error(`Generation failed: HTTP ${r.status}`)
+  }
+  return r.json()
+}
+
+
+export async function generateCreativesV2(
+  answers: Record<string, string>,
+  brandName: string,
+  brandColors: string,
+  category: string,
+  productImage?: File | null,
+  referenceImageUrl?: string
+) {
+  const keyMap: Record<string, string> = {
+    imageType: 'image_type',
+    mainText: 'main_text',
+  }
+  const skipKeys = new Set(['productImageFile'])
+
+  const form = new FormData()
+  Object.entries(answers).forEach(([k, v]) => {
+    if (v != null && !skipKeys.has(k)) {
+      const key = keyMap[k] || k
+      form.append(key, String(v))
+    }
+  })
+  form.append('brand_name', brandName)
+  form.append('brand_colors', brandColors)
+  form.append('category', category)
+  if (productImage) {
+    form.append('product_image', productImage)
+  }
+  if (referenceImageUrl) {
+    form.append('reference_image_url', referenceImageUrl)
+  }
+
+  const session = await getSafeSession()
+  const token = session?.access_token
+
+  const headers: HeadersInit = {}
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+
+  const r = await fetch(`${BASE}/generate`, { 
+    method: 'POST', 
+    body: form,
+    headers
+  })
+  
+  if (!r.ok) {
+    const errText = await r.text().catch(() => '')
+    console.error(`Generate V2 failed: HTTP ${r.status}`, errText)
     throw new Error(`Generation failed: HTTP ${r.status}`)
   }
   return r.json()

@@ -6,7 +6,7 @@ import os
 # Add parent dir to path to import t5_model if needed
 # Assuming backend structure allows this, or import directly
 try:
-    from backend.services.t5_model import T5PromptOptimizer
+    from services.t5_model import T5PromptOptimizer
 except ImportError:
     # Fallback or stub if T5 is not fully integrated yet
     T5PromptOptimizer = None

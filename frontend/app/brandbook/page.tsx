@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useStore } from "@/lib/store";
 import { searchBrand, getBrandProfile } from "@/lib/api";
+import { useDemoSession } from "@/components/providers/demo-session-provider";
 
 // Color and category utilities for premium rendering
 function hexToRgb(hex: string) {
@@ -145,6 +146,7 @@ interface BrandBookData {
 }
 
 export default function BrandBookPage() {
+  const { session, updateBrandProfileAndPersist } = useDemoSession();
   const setBrand = useStore(s => s.setBrand);
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [loadingStep, setLoadingStep] = useState(0);
@@ -244,6 +246,8 @@ export default function BrandBookPage() {
   const [whatsapp, setWhatsapp] = useState("");
 
   const [brandBook, setBrandBook] = useState<BrandBookData | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generationError, setGenerationError] = useState<string | null>(null);
 
   const categories = [
     "Electronics", "Clothing/Fashion", "Food & Drinks", "Jewellery", 
@@ -251,18 +255,66 @@ export default function BrandBookPage() {
     "Grocery/Kirana", "Mobile Repair"
   ];
 
+  // Hydrate brand profile from session or persistent storage
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const isEdit = window.location.search.includes("edit=true");
+      const savedBookStr = localStorage.getItem("gv_brand_book") || sessionStorage.getItem("gv_brand_book");
+      if (savedBookStr && !isEdit) {
+        try {
+          const parsed = JSON.parse(savedBookStr);
+          if (parsed && parsed.businessName && parsed.colors) {
+            setBrandBook(parsed);
+            setStep(4);
+            return;
+          }
+        } catch (e) {
+          console.error("Failed to parse saved brand book:", e);
+        }
+      }
+
+      // Hydrate from active session
+      const savedName = session.brandProfile?.businessName || session.workspace?.businessName;
+      if (savedName) setBusinessName(savedName);
+
+      const savedCategory = session.brandProfile?.category || session.workspace?.category;
+      if (savedCategory) setCategory(savedCategory);
+
+      if (session.brandProfile?.city || session.workspace?.city) {
+        setCity(session.brandProfile?.city || session.workspace?.city || "Mumbai");
+      }
+
+      if (session.brandProfile?.logoUrl) {
+        setLogoPreview(session.brandProfile.logoUrl);
+      }
+
+      if (session.brandProfile?.primaryColor) {
+        const colors = [
+          session.brandProfile.primaryColor,
+          session.brandProfile.secondaryColor || "#0B0907",
+          session.brandProfile.accentColor || "#ffffff"
+        ];
+        setLogoColors(colors);
+      }
+
+      if (isEdit) {
+        setStep(3);
+      }
+    }
+  }, [session]);
+
   // Pre-fill Instagram handle in Step 3 if entered in Step 2
   useEffect(() => {
     if (step === 3 && instagramHandle && !instagramHandle.startsWith("@")) {
       // Just ensure we pass it along correctly
     }
-  }, [step]);
+  }, [step, instagramHandle]);
 
   // Color extraction helper
   const extractColors = (imgElement: HTMLImageElement) => {
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
-    if (!ctx) return ["#39ff14", "#060a06", "#ffffff"];
+    if (!ctx) return ["#E8B66F", "#0B0907", "#ffffff"];
     
     const size = 50;
     canvas.width = size;
@@ -292,7 +344,7 @@ export default function BrandBookPage() {
     }
     
     const sorted = Object.keys(colorMap).sort((a, b) => colorMap[b] - colorMap[a]);
-    const fallbacks = ["#39ff14", "#f97316", "#a78bfa"];
+    const fallbacks = ["#E8B66F", "#6F452C", "#f97316"];
     const finalColors = [];
     
     for (let i = 0; i < 3; i++) {
@@ -364,21 +416,41 @@ export default function BrandBookPage() {
   };
 
   const triggerGenerate = async () => {
+    if (isGenerating) return;
+    setIsGenerating(true);
+    setGenerationError(null);
     setStep(4);
     startLoadingTimer();
 
     const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+    const cleanBiz = (businessName || session.brandProfile?.businessName || session.workspace?.businessName || "My Brand").trim();
+    const cleanCat = (category || session.brandProfile?.category || session.workspace?.category || "Clothing / Fashion").trim();
+    const cleanCity = (city || session.brandProfile?.city || session.workspace?.city || "Mumbai").trim();
+
     try {
+      // Ensure logoColors is a valid array of strings (extract hex if array of objects)
+      const cleanColors: string[] = [];
+      if (Array.isArray(logoColors)) {
+        for (const c of logoColors) {
+          if (typeof c === 'string' && c.trim()) {
+            cleanColors.push(c.trim());
+          } else if (c && typeof c === 'object' && 'hex' in c && typeof (c as any).hex === 'string') {
+            cleanColors.push((c as any).hex.trim());
+          }
+        }
+      }
+
       const payload = {
-        businessName: businessName,
-        category: category,
-        tagline: tagline || undefined,
-        existingColors: logoColors.length > 0 ? logoColors : undefined,
-        logoColors: logoColors.length > 0 ? logoColors : undefined,
-        captionsText: captionsText || undefined,
-        postImagesCount: postImagesCount,
-        whatsapp: whatsapp,
-        instagram: instagramHandle || undefined
+        businessName: cleanBiz,
+        category: cleanCat,
+        tagline: tagline && tagline.trim() ? tagline.trim() : undefined,
+        existingColors: cleanColors.length > 0 ? cleanColors : undefined,
+        logoColors: cleanColors.length > 0 ? cleanColors : undefined,
+        captionsText: captionsText && captionsText.trim() ? captionsText.trim() : undefined,
+        postImagesCount: typeof postImagesCount === 'number' ? postImagesCount : parseInt(String(postImagesCount) || '0', 10) || 0,
+        whatsapp: whatsapp && whatsapp.trim() ? whatsapp.trim() : undefined,
+        instagram: instagramHandle && instagramHandle.trim() ? instagramHandle.trim() : undefined,
+        city: cleanCity
       };
 
       const res = await fetch(`${BASE}/api/brandbook`, {
@@ -389,60 +461,56 @@ export default function BrandBookPage() {
         body: JSON.stringify(payload)
       });
 
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        let errorDetail = `HTTP ${res.status}`;
+        try {
+          const errorJson = await res.json();
+          if (errorJson.detail) {
+            if (Array.isArray(errorJson.detail)) {
+              errorDetail = errorJson.detail
+                .map((d: any) => `${d.loc?.filter((x: any) => x !== 'body').join('.') || 'field'}: ${d.msg}`)
+                .join('; ');
+            } else {
+              errorDetail = String(errorJson.detail);
+            }
+          }
+        } catch {
+          // Response body was not JSON or already consumed
+        }
+        throw new Error(`Brand Book generation failed (${res.status}): ${errorDetail}`);
+      }
+
       const data = await res.json();
       
       if (data.success && data.brandBook) {
         const book = data.brandBook as BrandBookData;
         setBrandBook(book);
-        // Store in sessionStorage as requested
+        localStorage.setItem("gv_brand_book", JSON.stringify(book));
         sessionStorage.setItem("gv_brand_book", JSON.stringify(book));
+
+        // Persist brand profile into database for user
+        if (updateBrandProfileAndPersist) {
+          updateBrandProfileAndPersist({
+            businessName: book.businessName,
+            category: book.category,
+            primaryColor: book.colors?.[0]?.hex || "#E8B66F",
+            secondaryColor: book.colors?.[1]?.hex || "#0B0907",
+            accentColor: book.colors?.[2]?.hex || "#ffffff",
+            fontHeading: book.fonts?.[0]?.name,
+            fontBody: book.fonts?.[1]?.name,
+            targetAudience: book.tagline,
+            city: cleanCity,
+            instagram: instagramHandle || undefined,
+          }).catch(console.error);
+        }
       } else {
-        throw new Error("Failed to generate brand book");
+        throw new Error("Failed to generate brand book: API returned unsuccessful status.");
       }
-    } catch (err) {
-      console.error(err);
-      // Fallback in case of server failure so that user does not get stuck
-      const fallbackBook: BrandBookData = {
-        businessName,
-        category,
-        tagline: tagline || `${businessName} — Quality You Can Trust`,
-        colors: [
-          { hex: logoColors[0] || "#39ff14", name: "Primary", use: "CTAs, headings, highlights" },
-          { hex: logoColors[1] || "#060a06", name: "Secondary", use: "Background, deep contrast" },
-          { hex: logoColors[2] || "#ffffff", name: "Accent", use: "Borders, icons, clean space" }
-        ],
-        fonts: [
-          { name: "Poppins Bold", use: "Headlines", style: "Google Fonts — free to use" },
-          { name: "Inter Regular", use: "Body", style: "Google Fonts — free to use" },
-          { name: "Noto Sans Devanagari", use: "Accent", style: "Google Fonts — free to use" }
-        ],
-        voiceWords: ["Trustworthy", "Affordable", "Local", "Premium", "Fast"],
-        doList: [
-          "Always show MRP and offer price clearly",
-          "Add 'Warranty included' badge",
-          "Post unboxing videos on Instagram Reels",
-          "Always show the price — Mumbai customers value transparency",
-          "Use Hinglish or Marathi in captions for connection"
-        ],
-        dontList: [
-          "Don't post blurry product images",
-          "Don't hide the price",
-          "Don't post without a warranty mention",
-          "Don't use more than 3 colors in one creative",
-          "Don't ignore comments and DMs on Instagram"
-        ],
-        hashtagSets: {
-          local: "#Mumbai #MumbaiShopping #MumbaiLocal",
-          category: `#${category.replace("/", "")} #ShopLocal`,
-          branded: `#${businessName.replace(/\s+/g, "")} #GoVisualAI`,
-          combined: `#Mumbai #${category.replace("/", "")}`
-        },
-        whatsapp: whatsapp,
-        instagram: instagramHandle
-      };
-      setBrandBook(fallbackBook);
-      sessionStorage.setItem("gv_brand_book", JSON.stringify(fallbackBook));
+    } catch (err: any) {
+      console.error("[BrandBook] Generation error:", err);
+      setGenerationError(err?.message || "Brand Book generation failed. Please review your details and try again.");
+    } finally {
+      setIsGenerating(false);
     }
   };
 
@@ -454,13 +522,13 @@ export default function BrandBookPage() {
   ];
 
   return (
-    <div style={{ minHeight: "100vh", background: "#060a06", color: "#e8e8f0", fontFamily: "system-ui, -apple-system, sans-serif", padding: "60px 24px" }}>
+    <div style={{ minHeight: "100vh", background: "#0B0907", color: "#e8e8f0", fontFamily: "system-ui, -apple-system, sans-serif", padding: "60px 24px" }}>
       <div style={{ maxWidth: 800, margin: "0 auto" }}>
         
         {/* Main Header (Hidden on final result page for prints) */}
         {step < 4 && (
           <div style={{ marginBottom: 40 }}>
-            <div style={{ fontSize: "12px", color: "#39ff14", fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>
+            <div style={{ fontSize: "12px", color: "#E8B66F", fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>
               📘 Brand Book Generator (Step {step}/3)
             </div>
             <h1 style={{ fontSize: "32px", fontWeight: 800, color: "#ffffff", marginBottom: 8 }}>
@@ -489,10 +557,10 @@ export default function BrandBookPage() {
                     onClick={() => setOnboardMode('search')}
                     style={{
                       padding: "20px",
-                      background: "rgba(57,255,20,0.08)",
-                      border: "1px solid #39ff14",
+                      background: "rgba(232,182,111,0.1)",
+                      border: "1px solid #E8B66F",
                       borderRadius: "12px",
-                      color: "#39ff14",
+                      color: "#E8B66F",
                       fontWeight: 700,
                       fontSize: "16px",
                       cursor: "pointer",
@@ -551,10 +619,10 @@ export default function BrandBookPage() {
                     disabled={isSearching}
                     style={{
                       padding: "14px",
-                      background: "#39ff14",
+                      background: "#E8B66F",
                       border: "none",
                       borderRadius: "10px",
-                      color: "#000",
+                      color: "#0B0907",
                       fontWeight: 700,
                       cursor: "pointer",
                       fontSize: "14px"
@@ -643,7 +711,7 @@ export default function BrandBookPage() {
                               height: "60px",
                               borderRadius: "8px",
                               overflow: "hidden",
-                              border: `2px solid ${selectedPhotoUrl === (p.url || p.thumb) ? "#39ff14" : "transparent"}`,
+                              border: `2px solid ${selectedPhotoUrl === (p.url || p.thumb) ? "#E8B66F" : "transparent"}`,
                               flexShrink: 0,
                               cursor: "pointer"
                             }}
@@ -662,10 +730,10 @@ export default function BrandBookPage() {
                     style={{
                       width: "100%",
                       padding: "14px",
-                      background: "#39ff14",
+                      background: "#E8B66F",
                       border: "none",
                       borderRadius: "10px",
-                      color: "#000",
+                      color: "#0B0907",
                       fontWeight: 700,
                       cursor: "pointer",
                       fontSize: "14px"
@@ -702,10 +770,10 @@ export default function BrandBookPage() {
 
                 {/* Upload Drag & Drop Area */}
                 <div style={{
-                  border: "2px dashed rgba(57,255,20,0.3)",
+                  border: "2px dashed rgba(232, 182, 111, 0.4)",
                   borderRadius: "12px",
                   padding: "40px 20px",
-                  background: "rgba(57,255,20,0.02)",
+                  background: "rgba(232, 182, 111, 0.04)",
                   cursor: "pointer",
                   position: "relative",
                   display: "flex",
@@ -722,7 +790,7 @@ export default function BrandBookPage() {
                     style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", opacity: 0, cursor: "pointer" }} 
                   />
                   <span style={{ fontSize: "40px" }}>📁</span>
-                  <span style={{ fontSize: "14px", fontWeight: 600, color: "#39ff14" }}>Click or Drag Logo Image here</span>
+                  <span style={{ fontSize: "14px", fontWeight: 600, color: "#E8B66F" }}>Click or Drag Logo Image here</span>
                   <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.3)" }}>Supports PNG, SVG, JPG (Max 5MB)</span>
                 </div>
 
@@ -767,20 +835,19 @@ export default function BrandBookPage() {
                   </button>
                   <button 
                     onClick={() => setStep(2)}
-                    disabled={!logoPreview}
                     style={{
                       flex: 1,
                       padding: "16px",
-                      background: logoPreview ? "#39ff14" : "rgba(57,255,20,0.2)",
+                      background: "#E8B66F",
                       border: "none",
                       borderRadius: "12px",
-                      color: "#000",
+                      color: "#0B0907",
                       fontWeight: 700,
                       fontSize: "16px",
-                      cursor: logoPreview ? "pointer" : "not-allowed"
+                      cursor: "pointer"
                     }}
                   >
-                    Next →
+                    {logoPreview ? "Next →" : "Continue without Logo →"}
                   </button>
                 </div>
               </div>
@@ -867,7 +934,7 @@ export default function BrandBookPage() {
 
             <div style={{ display: "flex", gap: "12px" }}>
               <button onClick={() => setStep(1)} style={{ flex: 1, padding: "16px", background: "transparent", border: "1px solid rgba(255,255,255,0.15)", borderRadius: "12px", color: "#ffffff", fontWeight: 700, fontSize: "16px", cursor: "pointer" }}>Back</button>
-              <button onClick={() => setStep(3)} style={{ flex: 1, padding: "16px", background: "#39ff14", border: "none", borderRadius: "12px", color: "#000", fontWeight: 700, fontSize: "16px", cursor: "pointer" }}>Next →</button>
+              <button onClick={() => setStep(3)} style={{ flex: 1, padding: "16px", background: "#E8B66F", border: "none", borderRadius: "12px", color: "#0B0907", fontWeight: 700, fontSize: "16px", cursor: "pointer" }}>Next →</button>
             </div>
           </div>
         )}
@@ -901,7 +968,7 @@ export default function BrandBookPage() {
                       setIsCustomCategory(!isCustomCategory);
                       setCategory("");
                     }}
-                    style={{ background: "transparent", border: "none", color: "#39ff14", fontSize: "12px", cursor: "pointer", textDecoration: "underline", padding: 0 }}
+                    style={{ background: "transparent", border: "none", color: "#E8B66F", fontSize: "12px", cursor: "pointer", textDecoration: "underline", padding: 0 }}
                   >
                     {isCustomCategory ? "Select from list" : "Type custom category"}
                   </button>
@@ -918,13 +985,21 @@ export default function BrandBookPage() {
                 ) : (
                   <select 
                     value={category} 
-                    onChange={e => setCategory(e.target.value)} 
+                    onChange={e => {
+                      if (e.target.value === "__custom__") {
+                        setIsCustomCategory(true);
+                        setCategory("");
+                      } else {
+                        setCategory(e.target.value);
+                      }
+                    }} 
                     style={{ width: "100%", padding: "12px 16px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "10px", color: "#e8e8f0", fontSize: "14px", cursor: "pointer" }}
                   >
-                    <option value="" style={{ background: "#060a06", color: "#e8e8f0" }}>Select a Category</option>
+                    <option value="" style={{ background: "#0B0907", color: "#e8e8f0" }}>Select a Category</option>
                     {categories.map(c => (
-                      <option key={c} value={c} style={{ background: "#060a06", color: "#e8e8f0" }}>{c}</option>
+                      <option key={c} value={c} style={{ background: "#0B0907", color: "#e8e8f0" }}>{c}</option>
                     ))}
+                    <option value="__custom__" style={{ background: "#0B0907", color: "#E8B66F" }}>+ Other / Custom Category...</option>
                   </select>
                 )}
               </div>
@@ -955,7 +1030,7 @@ export default function BrandBookPage() {
 
               {/* WhatsApp */}
               <div style={{ marginBottom: "20px" }}>
-                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "rgba(255,255,255,0.6)", marginBottom: "8px" }}>WhatsApp Number * (used on website)</label>
+                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "rgba(255,255,255,0.6)", marginBottom: "8px" }}>WhatsApp Number (optional — used on website)</label>
                 <input 
                   type="text" 
                   value={whatsapp} 
@@ -968,7 +1043,7 @@ export default function BrandBookPage() {
               {/* Instagram Handle Display/Pre-filled */}
               {instagramHandle && (
                 <div style={{ fontSize: "13px", color: "rgba(255,255,255,0.5)" }}>
-                  Connected Instagram: <span style={{ color: "#39ff14", fontWeight: 600 }}>{instagramHandle}</span>
+                  Connected Instagram: <span style={{ color: "#E8B66F", fontWeight: 600 }}>{instagramHandle}</span>
                 </div>
               )}
             </div>
@@ -977,41 +1052,62 @@ export default function BrandBookPage() {
               <button onClick={() => setStep(2)} style={{ flex: 1, padding: "16px", background: "transparent", border: "1px solid rgba(255,255,255,0.15)", borderRadius: "12px", color: "#ffffff", fontWeight: 700, fontSize: "16px", cursor: "pointer" }}>Back</button>
               <button 
                 onClick={triggerGenerate} 
-                disabled={!businessName || !category || !whatsapp}
+                disabled={isGenerating || !businessName.trim() || !category.trim()}
                 style={{
                   flex: 1,
                   padding: "16px",
-                  background: (!businessName || !category || !whatsapp) ? "rgba(57,255,20,0.2)" : "#39ff14",
+                  background: (isGenerating || !businessName.trim() || !category.trim()) ? "rgba(232,182,111,0.2)" : "#E8B66F",
                   border: "none",
                   borderRadius: "12px",
-                  color: "#000000",
+                  color: (isGenerating || !businessName.trim() || !category.trim()) ? "#888888" : "#0B0907",
                   fontWeight: 700,
                   fontSize: "16px",
-                  cursor: (!businessName || !category || !whatsapp) ? "not-allowed" : "pointer"
+                  cursor: (isGenerating || !businessName.trim() || !category.trim()) ? "not-allowed" : "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "8px"
                 }}>
-                Generate My Brand Book →
+                {isGenerating ? "Generating Brand Book..." : "Generate My Brand Book →"}
               </button>
             </div>
           </div>
         )}
 
-        {/* STEP 4: LOADING OR FINAL RESULT VIEW */}
+        {/* STEP 4: LOADING, ERROR, OR FINAL RESULT VIEW */}
         {step === 4 && (
           <div>
-            {!brandBook ? (
+            {generationError ? (
+              // Error state with actionable retry and edit buttons
+              <div style={{ textAlign: "center", padding: "60px 24px", background: "rgba(239, 68, 68, 0.08)", border: "1px solid rgba(239, 68, 68, 0.25)", borderRadius: "16px", maxWidth: "600px", margin: "40px auto" }}>
+                <div style={{ fontSize: "40px", marginBottom: "16px" }}>⚠️</div>
+                <h2 style={{ fontSize: "20px", fontWeight: 700, color: "#ffffff", marginBottom: "10px" }}>Brand Book Generation Notice</h2>
+                <p style={{ color: "rgba(255,255,255,0.7)", fontSize: "14px", lineHeight: 1.5, marginBottom: "24px" }}>
+                  {generationError}
+                </p>
+                <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
+                  <button onClick={triggerGenerate} style={{ padding: "12px 24px", background: "#E8B66F", border: "none", borderRadius: "8px", color: "#0B0907", fontWeight: 700, cursor: "pointer", fontSize: "14px" }}>
+                    🔄 Try Again
+                  </button>
+                  <button onClick={() => { setGenerationError(null); setStep(3); }} style={{ padding: "12px 20px", background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "8px", color: "#ffffff", fontWeight: 600, cursor: "pointer", fontSize: "14px" }}>
+                    ✏️ Edit Details
+                  </button>
+                </div>
+              </div>
+            ) : !brandBook ? (
               // Loading screen
               <div style={{ textAlign: "center", padding: "100px 0" }}>
                 <div style={{ fontSize: "64px", marginBottom: "24px" }}>📘</div>
                 <h2 style={{ fontSize: "24px", fontWeight: 800, color: "#ffffff", marginBottom: "16px" }}>
-                  {loadingMessages[loadingStep] || "Processing..."}
+                  {loadingMessages[loadingStep] || "Building your brand identity..."}
                 </h2>
                 <div style={{ maxWidth: "400px", margin: "0 auto", height: "6px", background: "rgba(255,255,255,0.05)", borderRadius: "10px", overflow: "hidden" }}>
                   <div style={{
                     height: "100%",
-                    background: "#39ff14",
-                    width: `${(loadingStep / 4) * 100}%`,
-                    transition: "width 1s linear",
-                    boxShadow: "0 0 10px #39ff14"
+                    background: "#E8B66F",
+                    width: `${Math.min(100, Math.max(15, (loadingStep / 4) * 100))}%`,
+                    transition: "width 0.8s ease-out",
+                    boxShadow: "0 0 10px #E8B66F"
                   }} />
                 </div>
               </div>
@@ -1101,13 +1197,13 @@ export default function BrandBookPage() {
                 `}} />
 
                 {/* Banner & Control Panel */}
-                <div className="no-print" style={{ width: "100%", maxWidth: "800px", background: "rgba(57,255,20,0.08)", border: "1px solid #39ff14", borderRadius: "16px", padding: "24px", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "16px" }}>
+                <div className="no-print" style={{ width: "100%", maxWidth: "800px", background: "rgba(232,182,111,0.1)", border: "1px solid #E8B66F", borderRadius: "16px", padding: "24px", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "16px" }}>
                   <div>
                     <h3 style={{ margin: 0, fontSize: "18px", color: "#ffffff", fontWeight: 700 }}>Your Brand Book is Generated!</h3>
                     <p style={{ margin: "4px 0 0 0", color: "rgba(255,255,255,0.5)", fontSize: "13px" }}>Scroll below to preview the pages. Click the download button to save it as a PDF.</p>
                   </div>
                   <div style={{ display: "flex", gap: "10px" }}>
-                    <button onClick={() => window.print()} style={{ background: "#39ff14", color: "#000", fontWeight: 700, border: "none", padding: "10px 20px", borderRadius: "8px", fontSize: "14px", cursor: "pointer" }}>
+                    <button onClick={() => window.print()} style={{ background: "#E8B66F", color: "#0B0907", fontWeight: 700, border: "none", padding: "10px 20px", borderRadius: "8px", fontSize: "14px", cursor: "pointer" }}>
                       Download PDF
                     </button>
                     <Link href="/minisite" style={{ textDecoration: "none", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.15)", color: "#ffffff", fontWeight: 700, padding: "10px 20px", borderRadius: "8px", fontSize: "14px" }}>
@@ -1121,7 +1217,13 @@ export default function BrandBookPage() {
 
                   {/* ================= PAGE 1: COVER PAGE ================= */}
                   <div className="brand-book-page cover-page" style={{
-                    backgroundImage: `linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.78)), url(${getCategoryCoverUrl(brandBook.category)})`,
+                    backgroundImage: `linear-gradient(rgba(0,0,0,0.4), rgba(0,0,0,0.82)), url(${
+                      (session.products && session.products.length > 0 && (session.products[0].imageUrl || (session.products[0] as any).image_url))
+                        ? (session.products[0].imageUrl || (session.products[0] as any).image_url)
+                        : (postImagesPreviews && postImagesPreviews.length > 0)
+                          ? postImagesPreviews[0]
+                          : getCategoryCoverUrl(brandBook?.category || category)
+                    })`,
                     backgroundSize: "cover",
                     backgroundPosition: "center",
                     color: "#ffffff",
@@ -1129,7 +1231,7 @@ export default function BrandBookPage() {
                   }}>
                     {/* Header bar */}
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", width: "100%" }}>
-                      <div className="label-header" style={{ fontSize: "11px", color: "#39ff14" }}>GoVisual AI — Brand Guide</div>
+                      <div className="label-header" style={{ fontSize: "11px", color: "#E8B66F" }}>GoVisual AI — Brand Guide</div>
                       <div style={{ fontSize: "11px", opacity: 0.6 }}>EST. 2026</div>
                     </div>
 
@@ -1147,7 +1249,7 @@ export default function BrandBookPage() {
                         B R A N D &nbsp; B O O K
                       </div>
                       {brandBook.tagline && (
-                        <p style={{ fontSize: "18px", opacity: 0.8, fontStyle: "italic", margin: "12px 0 0 0", borderLeft: "3px solid #39ff14", paddingLeft: "12px" }}>
+                        <p style={{ fontSize: "18px", opacity: 0.8, fontStyle: "italic", margin: "12px 0 0 0", borderLeft: "3px solid #E8B66F", paddingLeft: "12px" }}>
                           "{brandBook.tagline}"
                         </p>
                       )}
@@ -1182,24 +1284,29 @@ export default function BrandBookPage() {
                         <div>
                           <div className="label-header" style={{ fontSize: "10px", color: "#9ca3af", marginBottom: "12px" }}>Logo Usage & Sizing</div>
                           <div style={{ display: "flex", flexWrap: "wrap", gap: "16px" }}>
-                            {logoPreview && (
-                              <div style={{ border: "2px dashed #d1d5db", padding: "16px", borderRadius: "8px", position: "relative", background: "#f9fafb" }}>
-                                <img src={logoPreview} alt="Logo" style={{ height: "48px", maxWidth: "120px", objectFit: "contain" }} />
-                                <span style={{ position: "absolute", bottom: "2px", right: "4px", fontSize: "8px", color: "#9ca3af", fontFamily: "monospace" }}>+65px clearspace</span>
-                              </div>
-                            )}
-                            <div style={{ display: "flex", gap: "10px" }}>
-                              {logoPreview && (
-                                <>
+                            {logoPreview ? (
+                              <>
+                                <div style={{ border: "2px dashed #d1d5db", padding: "16px", borderRadius: "8px", position: "relative", background: "#f9fafb" }}>
+                                  <img src={logoPreview} alt="Logo" style={{ height: "48px", maxWidth: "120px", objectFit: "contain" }} />
+                                  <span style={{ position: "absolute", bottom: "2px", right: "4px", fontSize: "8px", color: "#9ca3af", fontFamily: "monospace" }}>+65px clearspace</span>
+                                </div>
+                                <div style={{ display: "flex", gap: "10px" }}>
                                   <div style={{ background: "#000000", padding: "8px", borderRadius: "4px", display: "flex", alignItems: "center" }}>
                                     <img src={logoPreview} alt="Logo White" style={{ height: "32px", maxWidth: "80px", objectFit: "contain", filter: "brightness(0) invert(1)" }} />
                                   </div>
                                   <div style={{ background: "#ffffff", border: "1px solid #e5e7eb", padding: "8px", borderRadius: "4px", display: "flex", alignItems: "center" }}>
                                     <img src={logoPreview} alt="Logo Black" style={{ height: "32px", maxWidth: "80px", objectFit: "contain", filter: "brightness(0)" }} />
                                   </div>
-                                </>
-                              )}
-                            </div>
+                                </div>
+                              </>
+                            ) : (
+                              <div style={{ border: "1px solid #e5e7eb", padding: "16px 20px", borderRadius: "8px", background: "#f9fafb" }}>
+                                <div style={{ fontSize: "20px", fontWeight: 800, color: "#111827", letterSpacing: "-0.01em" }}>
+                                  {brandBook?.businessName || businessName || "Your Brand"}
+                                </div>
+                                <span style={{ fontSize: "11px", color: "#6b7280" }}>Typographic Wordmark (No logo image uploaded)</span>
+                              </div>
+                            )}
                           </div>
                           <div style={{ fontSize: "11px", color: "#6b7280", marginTop: "8px" }}>
                             Minimum size: 150px wide digital. Always secure the clearspace padding around the badge.
@@ -1261,7 +1368,7 @@ export default function BrandBookPage() {
                         <div>
                           <div className="label-header" style={{ fontSize: "10px", color: "#9ca3af", marginBottom: "10px" }}>Brand Voice Attributes</div>
                           <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                            {brandBook.voiceWords.map((w, idx) => (
+                            {(brandBook.voiceWords || ["Trustworthy", "Affordable", "Local", "Premium", "Fast"]).map((w, idx) => (
                               <span key={idx} style={{ border: "1px solid #e5e7eb", background: "#f9fafb", padding: "6px 14px", borderRadius: "20px", fontSize: "12px", fontWeight: 600, color: "#374151" }}>
                                 {w}
                               </span>
@@ -1275,7 +1382,7 @@ export default function BrandBookPage() {
                           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", background: "#f9fafb", border: "1px solid #e5e7eb", padding: "16px", borderRadius: "8px" }}>
                             <div>
                               <span style={{ fontSize: "11px", color: "#9ca3af", display: "block" }}>PRIMARY REGION</span>
-                              <span style={{ fontSize: "14px", fontWeight: 700, color: "#111827" }}>{city || "Mumbai"}</span>
+                              <span style={{ fontSize: "14px", fontWeight: 700, color: "#111827" }}>{city || session.brandProfile?.city || session.workspace?.city || "Local Market"}</span>
                             </div>
                             <div>
                               <span style={{ fontSize: "11px", color: "#9ca3af", display: "block" }}>CUSTOMER PROFILE</span>
@@ -1289,7 +1396,7 @@ export default function BrandBookPage() {
                           <div style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", padding: "14px", borderRadius: "8px" }}>
                             <span className="label-header" style={{ fontSize: "9px", color: "#15803d", display: "block", marginBottom: "8px" }}>✅ Always Do</span>
                             <div style={{ display: "flex", flexDirection: "column", gap: "6px", fontSize: "11px", color: "#166534" }}>
-                              {brandBook.doList.slice(0, 3).map((item, idx) => (
+                              {(brandBook.doList || []).slice(0, 3).map((item, idx) => (
                                 <div key={idx} style={{ paddingLeft: "8px", borderLeft: "2px solid #22c55e" }}>{item}</div>
                               ))}
                             </div>
@@ -1298,7 +1405,7 @@ export default function BrandBookPage() {
                           <div style={{ border: "1px solid #fecaca", background: "#fef2f2", padding: "14px", borderRadius: "8px" }}>
                             <span className="label-header" style={{ fontSize: "9px", color: "#b91c1c", display: "block", marginBottom: "8px" }}>❌ Never Do</span>
                             <div style={{ display: "flex", flexDirection: "column", gap: "6px", fontSize: "11px", color: "#991b1b" }}>
-                              {brandBook.dontList.slice(0, 3).map((item, idx) => (
+                              {(brandBook.dontList || []).slice(0, 3).map((item, idx) => (
                                 <div key={idx} style={{ paddingLeft: "8px", borderLeft: "2px solid #ef4444" }}>{item}</div>
                               ))}
                             </div>
@@ -1365,14 +1472,21 @@ export default function BrandBookPage() {
                                 <img src={logoPreview} alt="Logo Ref" style={{ maxHeight: "60px", maxWidth: "100%", objectFit: "contain" }} />
                               </div>
                             )}
-                            {postImagesPreviews.slice(0, 5).map((src, idx) => (
-                              <div key={idx} style={{ border: "1px solid #e5e7eb", borderRadius: "6px", overflow: "hidden", background: "#ffffff", position: "relative", aspectRatio: "1" }}>
-                                <img src={src} alt={`Ref Upload ${idx}`} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                              </div>
-                            ))}
-                            {postImagesPreviews.length === 0 && !logoPreview && (
-                              <div style={{ gridColumn: "span 4", textAlign: "center", padding: "16px", color: "#9ca3af", fontSize: "12px" }}>No uploads uploaded.</div>
-                            )}
+                            {postImagesPreviews.length > 0 ? (
+                              postImagesPreviews.slice(0, 5).map((src, idx) => (
+                                <div key={idx} style={{ border: "1px solid #e5e7eb", borderRadius: "6px", overflow: "hidden", background: "#ffffff", position: "relative", aspectRatio: "1" }}>
+                                  <img src={src} alt={`Ref Upload ${idx}`} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                </div>
+                              ))
+                            ) : (session.products && session.products.length > 0) ? (
+                              session.products.slice(0, 5).map((p, idx) => (
+                                <div key={idx} style={{ border: "1px solid #e5e7eb", borderRadius: "6px", overflow: "hidden", background: "#ffffff", position: "relative", aspectRatio: "1" }}>
+                                  <img src={p.imageUrl || "/placeholder.png"} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                </div>
+                              ))
+                            ) : !logoPreview ? (
+                              <div style={{ gridColumn: "span 4", textAlign: "center", padding: "16px", color: "#9ca3af", fontSize: "12px" }}>No reference uploads available.</div>
+                            ) : null}
                           </div>
                         </div>
                       </div>
@@ -1407,7 +1521,7 @@ export default function BrandBookPage() {
                         <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", padding: "18px", borderRadius: "8px" }}>
                           <span className="label-header" style={{ fontSize: "10px", color: "#4b5563", display: "block", marginBottom: "8px" }}>Brand Narrative Direction</span>
                           <p style={{ fontSize: "13px", color: "#1f2937", lineHeight: 1.6, margin: 0 }}>
-                            {brandBook.businessName} establishes a "{brandBook.vibe}" identity. By matching the colors with primary typography, the brand coordinates clean digital touchpoints for its target audience in {city || "Mumbai"}. Use these principles consistently across socials, website packaging, and banners.
+                            {brandBook.businessName} establishes a "{brandBook.vibe}" identity. By matching the colors with primary typography, the brand coordinates clean digital touchpoints for its target audience in {city || session.brandProfile?.city || session.workspace?.city || "your target market"}. Use these principles consistently across socials, website packaging, and banners.
                           </p>
                         </div>
 
@@ -1446,10 +1560,16 @@ export default function BrandBookPage() {
                 </div>
 
                 {/* Bottom navigation panel */}
-                <div className="no-print" style={{ display: "flex", gap: "12px", marginTop: "20px" }}>
-                  <button onClick={() => window.print()} style={{ background: "#39ff14", color: "#000", border: "none", borderRadius: "8px", padding: "12px 24px", fontWeight: 700, cursor: "pointer", fontSize: "14px" }}>
+                <div className="no-print" style={{ display: "flex", gap: "12px", marginTop: "20px", flexWrap: "wrap" }}>
+                  <button onClick={() => window.print()} style={{ background: "#E8B66F", color: "#0B0907", border: "none", borderRadius: "8px", padding: "12px 24px", fontWeight: 700, cursor: "pointer", fontSize: "14px" }}>
                     Print / Download PDF
                   </button>
+                  <button onClick={() => setStep(3)} style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.2)", color: "#ffffff", padding: "12px 24px", borderRadius: "8px", fontWeight: 700, fontSize: "14px", cursor: "pointer" }}>
+                    ✏️ Edit Brand Profile
+                  </button>
+                  <Link href="/dashboard" style={{ textDecoration: "none", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "#ffffff", padding: "12px 24px", borderRadius: "8px", fontWeight: 700, fontSize: "14px" }}>
+                    Back to Dashboard
+                  </Link>
                   <Link href="/minisite" style={{ textDecoration: "none", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "#ffffff", padding: "12px 24px", borderRadius: "8px", fontWeight: 700, fontSize: "14px" }}>
                     Build Minisite
                   </Link>
