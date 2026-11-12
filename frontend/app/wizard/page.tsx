@@ -2,69 +2,12 @@
 import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useStore } from '@/lib/store'
-import { generateCreatives } from '@/lib/api'
+import { generateCreativesV2 } from '@/lib/api'
 import { supabase } from '@/lib/supabase'
 import Navbar from '@/components/Navbar'
 import { motion, AnimatePresence } from 'framer-motion'
 
-interface Question {
-  key: string
-  label: string
-  type: 'text' | 'number' | 'choice' | 'image'
-  placeholder?: string
-  hint?: string
-  options?: string[]
-}
-
-const QUESTIONS: Question[] = [
-  {
-    key: 'product', label: 'What is your main product?',
-    type: 'text', placeholder: "e.g. iPhone 16, Men's Kurta, Special Biryani",
-  },
-  {
-    key: 'price', label: 'What is the price?',
-    type: 'number', placeholder: 'e.g. 29999',
-  },
-  {
-    key: 'offer', label: 'Any special offer?',
-    type: 'choice',
-    options: ['No offer', '10% discount', '20% off', 'Buy 1 Get 1 Free', 'Flat ₹500 off', 'Free gift'],
-  },
-  {
-    key: 'mood', label: 'How should it feel?',
-    type: 'choice',
-    options: ['Premium & luxurious', 'Bold & energetic', 'Clean & minimal', 'Warm & friendly', 'Festive & colorful'],
-  },
-  {
-    key: 'background', label: 'What kind of background?',
-    type: 'choice',
-    options: ['Dark tech', 'Bright studio white', 'Outdoor lifestyle', 'Abstract gradient', 'Festive themed', 'Plain white'],
-  },
-  {
-    key: 'lighting', label: 'What kind of lighting?',
-    type: 'choice',
-    options: ['Dramatic spotlight', 'Soft natural light', 'Neon glow', 'Bright daylight', 'Cinematic dark'],
-  },
-  {
-    key: 'productImageFile', label: 'Upload your product photo',
-    type: 'image',
-    hint: 'A clear photo of the product on any background. This helps AI match your exact product.',
-  },
-  {
-    key: 'mainText', label: 'Main text on the image?',
-    type: 'text', placeholder: 'e.g. New Arrival! or Diwali Special',
-  },
-  {
-    key: 'language', label: 'Caption language?',
-    type: 'choice',
-    options: ['English', 'Hindi', 'Marathi', 'Hinglish'],
-  },
-  {
-    key: 'urgency', label: 'Is this time-limited?',
-    type: 'choice',
-    options: ['No urgency', 'Today only', 'This weekend', 'Limited stock'],
-  },
-]
+import { CREATIVE_QUESTIONS as QUESTIONS, type CreativeQuestion as Question } from '@/lib/creativeQuestions'
 
 export default function WizardPage() {
   const router = useRouter()
@@ -120,7 +63,7 @@ export default function WizardPage() {
       if (!imageFile && !referenceImageUrl) throw new Error('Upload product image or select shop photo')
       if (!brand) throw new Error('Brand profile missing')
 
-      const data = await generateCreatives(
+      const data = await generateCreativesV2(
         answersToSend,
         brand.name,
         brand.colors.join(' & '),
@@ -128,7 +71,8 @@ export default function WizardPage() {
         imageFile,
         referenceImageUrl,
       )
-      setResults(data.images, data.caption, data.session_id)
+      
+      setResults(data.candidates, data.caption, data.session_id)
       router.push('/results')
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Generation failed'
@@ -142,16 +86,16 @@ export default function WizardPage() {
   return (
     <>
       <Navbar />
-      <main className="min-h-screen bg-[#060a06] max-w-lg mx-auto px-6 py-24 text-white">
+      <main className="min-h-screen bg-[#0B0907] max-w-lg mx-auto px-6 py-24 text-[#F7F3ED]">
         {/* Progress Bar */}
         <div className="mb-10">
-          <div className="flex justify-between text-xs text-[#2a4a2a] mb-3">
+          <div className="flex justify-between text-xs text-[#B9AA99] mb-3">
             <span>Question {step + 1} of {QUESTIONS.length}</span>
-            <span className="text-[#39ff14]">{Math.round(progress)}%</span>
+            <span className="text-[#E8B66F]">{Math.round(progress)}%</span>
           </div>
-          <div className="h-[3px] bg-[#0d160d] rounded-full overflow-hidden">
+          <div className="h-[3px] bg-[#21170F] rounded-full overflow-hidden">
             <motion.div
-              className="h-full bg-[#39ff14] rounded-full shadow-[0_0_8px_rgba(57,255,20,0.4)]"
+              className="h-full bg-[#E8B66F] rounded-full shadow-[0_0_8px_rgba(232,182,111,0.4)]"
               initial={{ width: '0%' }}
               animate={{ width: `${progress}%` }}
               transition={{ duration: 0.4, ease: 'easeOut' }}
@@ -169,17 +113,17 @@ export default function WizardPage() {
             transition={{ duration: 0.25 }}
           >
             {/* Question Title */}
-            <h2 className="font-space-grotesk text-2xl font-bold text-white mb-2">{q.label}</h2>
-            {q.hint && <p className="text-[#3a5a3a] text-xs mb-8">{q.hint}</p>}
+            <h2 className="font-space-grotesk text-2xl font-bold text-[#F7F3ED] mb-2">{q.label}</h2>
+            {q.hint && <p className="text-[#B9AA99] text-xs mb-8">{q.hint}</p>}
             {!q.hint && <div className="mb-8" />}
 
             {/* Text / Number Input */}
             {(q.type === 'text' || q.type === 'number') && (
               <input
                 type={q.type}
-                className="w-full bg-[#080f08] border border-[#1a2a1a] rounded-xl px-4 py-3.5 text-base text-white
-                           focus:outline-none focus:border-[#39ff14] transition-colors duration-150 mb-8
-                           placeholder-[#2a4a2a]"
+                className="w-full bg-[#14100D] border border-[#3B2B1E] rounded-xl px-4 py-3.5 text-base text-[#F7F3ED]
+                           focus:outline-none focus:border-[#E8B66F] transition-colors duration-150 mb-8
+                           placeholder-[#B9AA99]/50"
                 placeholder={q.placeholder}
                 value={answer as string}
                 onChange={e => setAnswer(e.target.value)}
@@ -198,8 +142,8 @@ export default function WizardPage() {
                     whileTap={{ scale: 0.98 }}
                     onClick={() => setAnswer(opt)}
                     className={`py-3 px-4 rounded-lg border text-sm font-medium transition-all duration-150 cursor-pointer ${answer === opt
-                        ? 'border-[#39ff14] bg-[#0a1a0a] text-[#39ff14] font-bold shadow-[0_0_12px_rgba(57,255,20,0.1)]'
-                        : 'border-[#1a2a1a] bg-[#080f08] text-[#3a5a3a] hover:border-[#2a4a2a] hover:text-[#4a7a4a]'
+                        ? 'border-[#E8B66F] bg-[rgba(232,182,111,0.1)] text-[#E8B66F] font-bold shadow-[0_0_12px_rgba(232,182,111,0.15)]'
+                        : 'border-[#3B2B1E] bg-[#14100D] text-[#B9AA99] hover:border-[#6F452C] hover:text-[#F7F3ED]'
                       }`}
                   >
                     {opt}
@@ -212,8 +156,8 @@ export default function WizardPage() {
             {q.type === 'image' && (
               <div className="mb-8">
                 {brand?.selectedReferenceUrl && (
-                  <div className="mb-4 rounded-lg border border-[#39ff14]/20 bg-[#0a1a0a] p-3">
-                    <p className="text-xs text-[#39ff14]">Using selected shop photo as fallback reference.</p>
+                  <div className="mb-4 rounded-lg border border-[#E8B66F]/20 bg-[rgba(232,182,111,0.05)] p-3">
+                    <p className="text-xs text-[#E8B66F]">Using selected shop photo as fallback reference.</p>
                   </div>
                 )}
                 <input type="file" accept="image/*" ref={fileRef} className="hidden"
@@ -236,15 +180,15 @@ export default function WizardPage() {
                     }
                   }}
                   className={`w-full border-2 border-dashed rounded-2xl p-10
-                             flex flex-col items-center gap-2 transition-colors duration-150 bg-[#0d160d] cursor-pointer ${isDragOver ? 'border-[#39ff14] bg-[#0a1a0a]' : 'border-[#1a2a1a] hover:border-[#39ff14]'
+                             flex flex-col items-center gap-2 transition-colors duration-150 bg-[#14100D] cursor-pointer ${isDragOver ? 'border-[#E8B66F] bg-[rgba(232,182,111,0.08)]' : 'border-[#3B2B1E] hover:border-[#E8B66F]'
                     }`}
                 >
                   {answer instanceof File
-                    ? <p className="text-[#39ff14] font-medium text-sm">✓ Photo selected: {answer.name}</p>
+                    ? <p className="text-[#E8B66F] font-medium text-sm">✓ Photo selected: {answer.name}</p>
                     : <>
                       <span className="text-3xl">📷</span>
-                      <p className="text-[#2a4a2a] text-sm">Tap to upload product photo</p>
-                      <p className="text-[#1a2a1a] text-xs">or drag and drop</p>
+                      <p className="text-[#B9AA99] text-sm">Tap to upload product photo</p>
+                      <p className="text-[#B9AA99]/60 text-xs">or drag and drop</p>
                     </>
                   }
                 </button>
@@ -255,7 +199,7 @@ export default function WizardPage() {
               <motion.p
                 initial={{ opacity: 0, y: -5 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="text-[#ff6b6b] text-sm mb-6 bg-[#0a1a0a] p-3 rounded-lg border border-[#2a1a1a]"
+                className="text-[#ef4444] text-sm mb-6 bg-[rgba(239,68,68,0.1)] p-3 rounded-lg border border-[rgba(239,68,68,0.3)]"
               >
                 {error}
               </motion.p>
@@ -269,8 +213,8 @@ export default function WizardPage() {
             <motion.button
               whileHover={{ scale: 1.02 }}
               onClick={handleBack}
-              className="px-6 py-3 border border-[#1a2a1a] rounded-lg text-[#3a5a3a] font-medium
-                         hover:border-[#39ff14] hover:text-[#39ff14] transition-colors duration-150 cursor-pointer"
+              className="px-6 py-3 border border-[#3B2B1E] rounded-lg text-[#B9AA99] font-medium
+                         hover:border-[#E8B66F] hover:text-[#E8B66F] transition-colors duration-150 cursor-pointer"
             >
               Back
             </motion.button>
@@ -280,8 +224,8 @@ export default function WizardPage() {
             whileTap={{ scale: 0.98 }}
             onClick={handleNext}
             disabled={(!answer && q.type !== 'image') || loading}
-            className="flex-1 bg-[#39ff14] text-black font-bold py-3 rounded-lg
-                       hover:opacity-90 disabled:opacity-40 transition-all duration-150 cursor-pointer"
+            className="flex-1 bg-[#E8B66F] text-[#0B0907] font-bold py-3 rounded-lg
+                       hover:bg-[#F3CB8D] disabled:opacity-40 transition-all duration-150 cursor-pointer"
           >
             {loading ? (
               <span className="flex items-center justify-center gap-2">

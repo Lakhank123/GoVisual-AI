@@ -10,27 +10,27 @@ export default function ProductCard({
   onEdit?: () => void;
 }) {
   return (
-    <div className="border border-[#1a2a1a] rounded-2xl p-4 bg-[#0d160d] relative flex flex-col group">
+    <div className="border border-[#3B2B1E] rounded-2xl p-4 bg-[#21170F] relative flex flex-col group">
       {isPrimary && (
-        <span className="absolute top-2 right-2 bg-[#39ff14]/20 text-[#39ff14] text-[10px] uppercase font-bold px-2 py-1 rounded">
+        <span className="absolute top-2 right-2 bg-[#E8B66F]/20 text-[#E8B66F] text-[10px] uppercase font-bold px-2 py-1 rounded">
           Flagship
         </span>
       )}
       {image ? (
         <img src={image} alt={name} className="w-full h-32 object-cover rounded-xl mb-3" />
       ) : (
-        <div className="w-full h-32 bg-[#1a2a1a] rounded-xl mb-3 flex items-center justify-center">
-          <span className="text-[#2a4a2a] text-xs">No image</span>
+        <div className="w-full h-32 bg-[#3B2B1E] rounded-xl mb-3 flex items-center justify-center">
+          <span className="text-[#8A7B6D] text-xs">No image</span>
         </div>
       )}
       <h4 className="font-semibold text-white text-base truncate">{name}</h4>
-      <p className="text-[#39ff14] text-sm font-medium mb-1">{price}</p>
-      <p className="text-[#3a5a3a] text-xs line-clamp-2 mb-3 flex-1">{description}</p>
+      <p className="text-[#E8B66F] text-sm font-medium mb-1">{price}</p>
+      <p className="text-[#B9AA99] text-xs line-clamp-2 mb-3 flex-1">{description}</p>
       
       <div className="flex items-center justify-between mt-auto">
-        <span className="text-[#2a4a2a] text-[10px] uppercase tracking-wider">{category}</span>
+        <span className="text-[#8A7B6D] text-[10px] uppercase tracking-wider">{category}</span>
         {onEdit && (
-          <button onClick={onEdit} className="text-[#39ff14] text-xs hover:underline">
+          <button onClick={onEdit} className="text-[#E8B66F] text-xs hover:underline">
             Edit
           </button>
         )}

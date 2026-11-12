@@ -36,7 +36,8 @@ export default function AIProgressPipeline() {
           }
         }
 
-        const extractRes = await fetch('http://localhost:8000/brand/onboard/extract', {
+        const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+        const extractRes = await fetch(`${apiBase}/brand/onboard/extract`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -53,7 +54,7 @@ export default function AIProgressPipeline() {
 
         // Phase 2: Understanding
         setCurrentPhase(1);
-        const analyseRes = await fetch('http://localhost:8000/brand/onboard/analyse', {
+        const analyseRes = await fetch(`${apiBase}/brand/onboard/analyse`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ raw_data: extractData.raw_data })
@@ -85,14 +86,39 @@ export default function AIProgressPipeline() {
     return () => { isMounted = false; };
   }, [googlePlaceId, websiteUrl, instagramHandle, manualData, setInferredProfile, setStep]);
 
+  const handleManualFallback = () => {
+    setInferredProfile({
+      brand_tone: { value: 'Warm, Authentic & Approachable', confidence: 'inferred' },
+      visual_style: { value: 'Modern Commercial', confidence: 'inferred' },
+      primary_language: { value: 'English / Hinglish', confidence: 'inferred' },
+      price_positioning: { value: 'Premium Value', confidence: 'inferred' },
+      brand_personality_tags: { value: ['Authentic', 'Reliable', 'Customer-First'], confidence: 'inferred' },
+      visual_dna: {
+        palette: [
+          { hex: '#E8B66F', role: 'primary' },
+          { hex: '#0B0907', role: 'secondary' },
+          { hex: '#FFFFFF', role: 'accent' },
+        ],
+      },
+    });
+    setStep(4);
+  };
+
   if (error) {
     return (
-      <div className="text-center">
-        <h2 className="text-red-400 text-xl font-bold mb-4">Pipeline Error</h2>
-        <p className="text-[#3a5a3a] mb-6">{error}</p>
-        <button onClick={() => setStep(2)} className="bg-[#1a2a1a] text-white px-6 py-2 rounded-lg hover:bg-[#2a4a2a]">
-          Go Back
-        </button>
+      <div className="text-center py-12 max-w-md mx-auto">
+        <h2 className="text-[#E8B66F] text-xl font-bold mb-3">AI Analysis Temporarily Unavailable</h2>
+        <p className="text-[#B9AA99] text-sm mb-6">
+          We couldn't automatically extract signals from the connected sources ({error}). You can continue right away by entering your brand details manually.
+        </p>
+        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+          <button onClick={() => setStep(2)} className="bg-[#21170F] border border-[#3B2B1E] text-white px-5 py-3 rounded-xl hover:bg-[#2B1E14] text-sm font-semibold">
+            ← Change Sources
+          </button>
+          <button onClick={handleManualFallback} className="bg-[#E8B66F] text-[#0B0907] px-5 py-3 rounded-xl hover:bg-[#F3CB8D] text-sm font-bold shadow-[0_0_15px_rgba(232,182,111,0.2)]">
+            Setup Brand Manually →
+          </button>
+        </div>
       </div>
     );
   }
@@ -101,8 +127,8 @@ export default function AIProgressPipeline() {
     <div className="w-full max-w-sm mx-auto pt-10">
       <div className="flex justify-center mb-10">
         <div className="relative w-24 h-24">
-          <div className="absolute inset-0 border-4 border-[#1a2a1a] rounded-full"></div>
-          <div className="absolute inset-0 border-4 border-[#39ff14] rounded-full border-t-transparent animate-spin"></div>
+          <div className="absolute inset-0 border-4 border-[#3B2B1E] rounded-full"></div>
+          <div className="absolute inset-0 border-4 border-[#E8B66F] rounded-full border-t-transparent animate-spin"></div>
         </div>
       </div>
       
@@ -110,21 +136,21 @@ export default function AIProgressPipeline() {
         {phases.map((phase, i) => (
           <div key={i} className="flex items-center gap-4">
             <div className={`w-5 h-5 rounded-full flex items-center justify-center border transition-all duration-500 ${
-              currentPhase > i ? 'bg-[#39ff14] border-[#39ff14]' :
-              currentPhase === i ? 'bg-transparent border-[#39ff14]' :
-              'bg-[#0d160d] border-[#1a2a1a]'
+              currentPhase > i ? 'bg-[#E8B66F] border-[#E8B66F]' :
+              currentPhase === i ? 'bg-transparent border-[#E8B66F]' :
+              'bg-[#21170F] border-[#3B2B1E]'
             }`}>
               {currentPhase > i && (
-                <svg className="w-3 h-3 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="w-3 h-3 text-[#0B0907]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                 </svg>
               )}
               {currentPhase === i && (
-                <div className="w-2 h-2 bg-[#39ff14] rounded-full animate-pulse"></div>
+                <div className="w-2 h-2 bg-[#E8B66F] rounded-full animate-pulse"></div>
               )}
             </div>
             <p className={`text-sm font-medium transition-colors duration-500 ${
-              currentPhase >= i ? 'text-white' : 'text-[#2a4a2a]'
+              currentPhase >= i ? 'text-white' : 'text-[#8A7B6D]'
             }`}>
               {phase}
             </p>

@@ -28,10 +28,23 @@ interface WizardAnswers {
 }
 
 interface GeneratedImage {
-  tier:          string
-  label:         string
+  tier?:         string
+  label?:        string
   url:           string
-  promptPreview: string
+  promptPreview?: string
+  
+  // V2 fields
+  candidate_id?: string
+  strategy_name?: string
+  prompt_used?: string
+  provider?: string
+  model?: string
+  status?: string
+  latency?: number
+  reference_conditioned?: boolean
+  error?: string
+  is_recommended?: boolean
+  recommendation_reason?: string
 }
 
 interface AppState {

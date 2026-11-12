@@ -1,40 +1,26 @@
 "use client";
+
 import React, { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-
-interface Product {
-  name: string;
-  price: string;
-  emoji: string;
-}
-
-interface MinisiteData {
-  shopName: string;
-  tagline: string;
-  category: string;
-  whatsapp: string;
-  instagram?: string;
-  address?: string;
-  hours?: string;
-  upiId?: string;
-  primaryColor: string;
-  products: Product[];
-}
+import { LandingPageRenderer, type MinisiteData } from "@/components/minisite/LandingPageRenderer";
 
 export default function MinisitePreviewPage() {
   const params = useParams();
+  const router = useRouter();
   const slug = params?.slug as string;
   const [data, setData] = useState<MinisiteData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [viewport, setViewport] = useState<"desktop" | "mobile" | "responsive">("responsive");
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!slug) return;
     const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
     fetch(`${apiBase}/s/${slug}`)
       .then((res) => {
-        if (!res.ok) throw new Error("Shop website not found");
+        if (!res.ok) throw new Error("Storefront not found or has expired.");
         return res.json();
       })
       .then((d) => {
@@ -47,15 +33,23 @@ export default function MinisitePreviewPage() {
       });
   }, [slug]);
 
+  const handleCopyLink = () => {
+    if (typeof window !== "undefined") {
+      navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
   if (loading) {
     return (
-      <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", background: "#060a06", color: "#e8e8f0", fontFamily: "system-ui, sans-serif" }}>
-        <div style={{ fontSize: 40, marginBottom: 16, animation: "bounce 1.5s infinite" }}>🌐</div>
-        <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: "0.05em", color: "#39ff14" }}>Loading Digital Shop...</div>
+      <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", background: "#0B0907", color: "#F7F3ED", fontFamily: "system-ui, sans-serif" }}>
+        <div style={{ width: 48, height: 48, borderRadius: "50%", border: "3px solid rgba(232,182,111,0.2)", borderTopColor: "#E8B66F", animation: "spin 0.8s linear infinite", marginBottom: 20 }} />
+        <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: "0.02em", color: "#E8B66F" }}>Assembling Brand Storefront...</div>
+        <p style={{ color: "rgba(255,255,255,0.45)", fontSize: 13, marginTop: 6 }}>Loading authentic brand styling, products, and conversion links</p>
         <style dangerouslySetInnerHTML={{ __html: `
-          @keyframes bounce {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-10px); }
+          @keyframes spin {
+            to { transform: rotate(360deg); }
           }
         `}} />
       </div>
@@ -64,213 +58,148 @@ export default function MinisitePreviewPage() {
 
   if (error || !data) {
     return (
-      <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", background: "#060a06", color: "#e8e8f0", fontFamily: "system-ui, sans-serif", padding: 24, textAlign: "center" }}>
-        <div style={{ fontSize: 48, marginBottom: 16 }}>⚠️</div>
-        <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8, color: "#f0a500" }}>Website Not Found</h1>
-        <p style={{ color: "rgba(255,255,255,0.45)", fontSize: 14, maxWidth: 400, marginBottom: 24 }}>We couldn't load this website. Make sure the link is correct or build a new one in the builder.</p>
-        <Link href="/minisite" style={{ padding: "12px 24px", background: "#f0a500", color: "#000", border: "none", borderRadius: 8, fontWeight: 700, textDecoration: "none", fontSize: 14 }}>
-          Go to Website Builder
+      <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", background: "#0B0907", color: "#F7F3ED", fontFamily: "system-ui, sans-serif", padding: 24, textAlign: "center" }}>
+        <div style={{ fontSize: 44, marginBottom: 16 }}>⚠️</div>
+        <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8, color: "#E8B66F" }}>Storefront Not Found</h1>
+        <p style={{ color: "rgba(255,255,255,0.55)", fontSize: 14, maxWidth: 440, marginBottom: 24, lineHeight: 1.5 }}>
+          We couldn&apos;t find an active website specification for &quot;{slug}&quot;. You can generate and configure one in the brand builder.
+        </p>
+        <Link 
+          href="/minisite" 
+          style={{ 
+            padding: "12px 24px", 
+            background: "#E8B66F", 
+            color: "#0B0907", 
+            borderRadius: 8, 
+            fontWeight: 700, 
+            textDecoration: "none", 
+            fontSize: 14 
+          }}
+        >
+          ← Go to Website Builder
         </Link>
       </div>
     );
   }
 
-  // Derive styles from selected brand color
-  const accentColor = data.primaryColor || "#39ff14";
-
   return (
-    <div style={{ minHeight: "100vh", background: "#050705", color: "#e8e8f0", fontFamily: "system-ui, -apple-system, sans-serif", padding: "40px 16px" }}>
-      <div style={{ maxWidth: 420, margin: "0 auto", background: "#0e130e", borderRadius: 24, border: "1px solid rgba(255,255,255,0.06)", overflow: "hidden", boxShadow: `0 24px 64px rgba(0,0,0,0.6), 0 0 50px ${accentColor}10` }}>
-        
-        {/* Header Cover Banner */}
-        <div style={{ background: `linear-gradient(135deg, ${accentColor}33, ${accentColor}08)`, borderBottom: `4px solid ${accentColor}`, padding: "40px 24px", textAlign: "center", position: "relative" }}>
-          {/* Shop Icon */}
-          <div style={{ 
-            width: 72, 
-            height: 72, 
-            borderRadius: "50%", 
-            background: accentColor, 
-            color: "#000",
-            display: "flex", 
-            alignItems: "center", 
-            justifyContent: "center", 
-            fontSize: 32, 
-            margin: "0 auto 16px",
-            boxShadow: `0 0 20px ${accentColor}44`,
-            fontWeight: 800
-          }}>
-            🏪
-          </div>
-          <h1 style={{ fontWeight: 850, fontSize: 24, color: "#ffffff", marginBottom: 6, letterSpacing: "-0.02em" }}>{data.shopName}</h1>
-          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.7)", fontWeight: 500 }}>{data.tagline || "Welcome to our shop!"}</div>
-          
-          <div style={{ fontSize: 11, background: "rgba(255,255,255,0.06)", padding: "4px 10px", borderRadius: 12, color: "rgba(255,255,255,0.5)", display: "inline-block", marginTop: 12 }}>
-            🏷️ {data.category}
+    <div style={{ minHeight: "100vh", background: "#080605", color: "#F7F3ED", fontFamily: "system-ui, sans-serif" }}>
+      {/* Top Floating Utility Control Bar */}
+      <header style={{
+        position: "sticky",
+        top: 0,
+        zIndex: 100,
+        background: "rgba(11, 9, 7, 0.92)",
+        backdropFilter: "blur(12px)",
+        borderBottom: "1px solid rgba(255,255,255,0.08)",
+        padding: "10px 20px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 16,
+        flexWrap: "wrap",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <Link
+            href="/minisite"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 13,
+              fontWeight: 600,
+              color: "#E8B66F",
+              textDecoration: "none",
+              padding: "6px 12px",
+              borderRadius: 6,
+              background: "rgba(232,182,111,0.1)",
+              border: "1px solid rgba(232,182,111,0.25)",
+            }}
+          >
+            ← Back to Builder
+          </Link>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>{data.shopName}</span>
+            <span style={{ fontSize: 11, background: "rgba(255,255,255,0.08)", padding: "2px 8px", borderRadius: 4, color: "rgba(255,255,255,0.5)" }}>
+              {data.theme ? data.theme.replace("_", " ") : "Storefront"}
+            </span>
           </div>
         </div>
 
-        {/* Content body */}
-        <div style={{ padding: "24px" }}>
-          
-          {/* Details */}
-          {(data.address || data.hours) && (
-            <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 16, padding: "16px", marginBottom: 20 }}>
-              {data.address && (
-                <div style={{ display: "flex", gap: 10, fontSize: 13, color: "rgba(255,255,255,0.75)", marginBottom: data.hours ? 12 : 0 }}>
-                  <span style={{ fontSize: 15 }}>📍</span>
-                  <span>{data.address}</span>
-                </div>
-              )}
-              {data.hours && (
-                <div style={{ display: "flex", gap: 10, fontSize: 13, color: "rgba(255,255,255,0.75)" }}>
-                  <span style={{ fontSize: 15 }}>🕙</span>
-                  <span>{data.hours}</span>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Products */}
-          {data.products && data.products.some(p => p.name) && (
-            <div style={{ marginBottom: 24 }}>
-              <div style={{ fontWeight: 700, fontSize: 14, color: "#fff", marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.05em", display: "flex", alignItems: "center", gap: 6 }}>
-                📦 Featured Products
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {data.products.filter(p => p.name).map((p, i) => (
-                  <div key={i} style={{ 
-                    display: "flex", 
-                    justifyContent: "space-between", 
-                    alignItems: "center", 
-                    padding: "12px 16px", 
-                    background: "rgba(255,255,255,0.02)", 
-                    border: "1px solid rgba(255,255,255,0.04)", 
-                    borderRadius: 12,
-                    transition: "all 0.2s"
-                  }}>
-                    <span style={{ fontSize: 14, fontWeight: 600, color: "#fff" }}>
-                      <span style={{ marginRight: 8, fontSize: 16 }}>{p.emoji}</span>
-                      {p.name}
-                    </span>
-                    {p.price && (
-                      <span style={{ fontWeight: 700, color: accentColor, fontSize: 14 }}>
-                        ₹{p.price}
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* CTA Buttons */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {data.whatsapp && (
-              <a 
-                href={`https://wa.me/${data.whatsapp.replace(/[^0-9]/g, "")}?text=Hi%20there,%20I'm%20interested%20in%20your%20products!`}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ 
-                  padding: "14px", 
-                  background: "#25D366", 
-                  borderRadius: 12, 
-                  color: "#fff", 
-                  fontWeight: 700, 
-                  fontSize: 14, 
-                  textAlign: "center", 
-                  textDecoration: "none",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                  boxShadow: "0 4px 12px rgba(37,211,102,0.2)"
-                }}
-              >
-                <span>💬</span> Chat on WhatsApp
-              </a>
-            )}
-
-            {data.instagram && (
-              <a 
-                href={`https://instagram.com/${data.instagram.replace("@", "")}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ 
-                  padding: "14px", 
-                  background: "linear-gradient(135deg, #e1306c, #833ab4)", 
-                  borderRadius: 12, 
-                  color: "#fff", 
-                  fontWeight: 700, 
-                  fontSize: 14, 
-                  textAlign: "center", 
-                  textDecoration: "none",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                  boxShadow: "0 4px 12px rgba(225,48,108,0.2)"
-                }}
-              >
-                <span>📸</span> Follow on Instagram
-              </a>
-            )}
-
-            {data.address && (
-              <a 
-                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(data.shopName + " " + data.address)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ 
-                  padding: "14px", 
-                  background: "#4285f4", 
-                  borderRadius: 12, 
-                  color: "#fff", 
-                  fontWeight: 700, 
-                  fontSize: 14, 
-                  textAlign: "center", 
-                  textDecoration: "none",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                  boxShadow: "0 4px 12px rgba(66,133,244,0.2)"
-                }}
-              >
-                <span>📍</span> Get Directions
-              </a>
-            )}
-
-            {data.upiId && (
-              <a 
-                href={`upi://pay?pa=${data.upiId}&pn=${encodeURIComponent(data.shopName)}&cu=INR`}
-                style={{ 
-                  padding: "14px", 
-                  background: "#6739b7", 
-                  borderRadius: 12, 
-                  color: "#fff", 
-                  fontWeight: 700, 
-                  fontSize: 14, 
-                  textAlign: "center", 
-                  textDecoration: "none",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                  boxShadow: "0 4px 12px rgba(103,57,183,0.2)"
-                }}
-              >
-                <span>💳</span> Pay via UPI
-              </a>
-            )}
-          </div>
-
+        {/* Viewport switcher */}
+        <div style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(255,255,255,0.05)", padding: 3, borderRadius: 8, border: "1px solid rgba(255,255,255,0.08)" }}>
+          <button
+            onClick={() => setViewport("responsive")}
+            style={{
+              padding: "5px 12px",
+              background: viewport === "responsive" ? "#E8B66F" : "transparent",
+              color: viewport === "responsive" ? "#000" : "rgba(255,255,255,0.7)",
+              border: "none",
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            Responsive
+          </button>
+          <button
+            onClick={() => setViewport("desktop")}
+            style={{
+              padding: "5px 12px",
+              background: viewport === "desktop" ? "#E8B66F" : "transparent",
+              color: viewport === "desktop" ? "#000" : "rgba(255,255,255,0.7)",
+              border: "none",
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            🖥️ Desktop
+          </button>
+          <button
+            onClick={() => setViewport("mobile")}
+            style={{
+              padding: "5px 12px",
+              background: viewport === "mobile" ? "#E8B66F" : "transparent",
+              color: viewport === "mobile" ? "#000" : "rgba(255,255,255,0.7)",
+              border: "none",
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            📱 Mobile
+          </button>
         </div>
 
-        {/* Footer */}
-        <div style={{ padding: "16px", textAlign: "center", fontSize: 10, color: "rgba(255,255,255,0.3)", borderTop: "1px solid rgba(255,255,255,0.04)" }}>
-          Made with <span style={{ color: "#39ff14", fontWeight: 700 }}>GoVisual AI</span> website builder
+        {/* Share and actions */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button
+            onClick={handleCopyLink}
+            style={{
+              padding: "6px 14px",
+              background: copied ? "#25D366" : "rgba(255,255,255,0.08)",
+              color: "#fff",
+              border: "1px solid rgba(255,255,255,0.15)",
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: "pointer",
+              transition: "all 0.2s",
+            }}
+          >
+            {copied ? "✓ Link Copied!" : "🔗 Share Link"}
+          </button>
         </div>
-      </div>
+      </header>
+
+      {/* Main Landing Page Render */}
+      <main style={{ padding: viewport === "mobile" ? "40px 16px" : 0 }}>
+        <LandingPageRenderer data={data} previewMode={viewport} />
+      </main>
     </div>
   );
 }

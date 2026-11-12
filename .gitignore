@@ -67,7 +67,8 @@ logs/
 *.tsbuildinfo
 
 # ------------------------------------------------------
-# Generated Media
+# ------------------------------------------------------
+# Generated Media & Debug Directories
 # ------------------------------------------------------
 backend/generated_images/*
 !backend/generated_images/.gitkeep
@@ -81,14 +82,33 @@ backend/debug_images/*
 backend/minisites/*
 !backend/minisites/.gitkeep
 
+debug_images/
+generated_images/
+**/debug_images/
+**/generated_images/
+
 # ------------------------------------------------------
-# Temporary Files
+# Temporary & Scratch Files
 # ------------------------------------------------------
 backend/tmp_*
 backend/test_*
+scratch_*.py
+backend/scratch_*.py
+diagnostic_*.py
+backend/diagnostic_*.py
+t5_test_results.txt
+audit_counts.json
+audit_summary.json
+test_large.jpg
+isolated_test_result.jpg
+backend/isolated_test_result.jpg
+govisual_dataset_v2.csv
 *.tmp
 *.bak
 *.swp
+
+# Local research logs and datasets (local only, do not upload)
+research/
 
 # ------------------------------------------------------
 # Machine Learning Models

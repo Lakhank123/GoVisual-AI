@@ -53,14 +53,14 @@ const BorderGlow = ({
   children,
   className = '',
   edgeSensitivity = 30,
-  glowColor = '40 80 80',
-  backgroundColor = '#120F17',
+  glowColor = '36 74 67',
+  backgroundColor = '#21170F',
   borderRadius = 28,
   glowRadius = 40,
   glowIntensity = 1.0,
   coneSpread = 25,
   animated = false,
-  colors = ['#c084fc', '#f472b6', '#38bdf8'],
+  colors = ['#E8B66F', '#6F452C', '#3B2B1E'],
   fillOpacity = 0.5,
 }) => {
   const cardRef = useRef(null);

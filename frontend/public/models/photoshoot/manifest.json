@@ -1,0 +1,56 @@
+[
+  {
+    "id": "aarav",
+    "name": "Aarav",
+    "gender": "male",
+    "description": "Modern commercial Indian male model, confident, approachable, premium lifestyle",
+    "style": "Modern Commercial",
+    "imagePath": "/models/photoshoot/aarav.png",
+    "intendedUse": "Commercial lifestyle, tech accessories, menswear, watches, urban products"
+  },
+  {
+    "id": "rohan",
+    "name": "Rohan",
+    "gender": "male",
+    "description": "Clean professional Indian male model, sharp corporate aesthetic, trustworthy",
+    "style": "Clean Professional",
+    "imagePath": "/models/photoshoot/rohan.png",
+    "intendedUse": "Corporate wear, grooming, formal accessories, luxury essentials"
+  },
+  {
+    "id": "kabir",
+    "name": "Kabir",
+    "gender": "male",
+    "description": "Bold editorial Indian male model, high-fashion attitude, striking features",
+    "style": "Bold Editorial",
+    "imagePath": "/models/photoshoot/kabir.png",
+    "intendedUse": "High-fashion apparel, bold jewelry, designer eyewear, luxury street fashion"
+  },
+  {
+    "id": "ananya",
+    "name": "Ananya",
+    "gender": "female",
+    "description": "Natural contemporary Indian female model, radiant, fresh, authentic elegance",
+    "style": "Natural Contemporary",
+    "imagePath": "/models/photoshoot/ananya.png",
+    "intendedUse": "Skincare, cosmetics, everyday jewelry, casual & fusion fashion, wellness"
+  },
+  {
+    "id": "meera",
+    "name": "Meera",
+    "gender": "female",
+    "description": "Elegant luxury Indian female model, sophisticated poise, regal grace",
+    "style": "Elegant Luxury",
+    "imagePath": "/models/photoshoot/meera.png",
+    "intendedUse": "Fine jewelry, bridal lehengas, silk sarees, luxury perfumes, festive couture"
+  },
+  {
+    "id": "isha",
+    "name": "Isha",
+    "gender": "female",
+    "description": "Youthful expressive Indian female model, vibrant energy, trend-forward Gen Z vibe",
+    "style": "Youthful Expressive",
+    "imagePath": "/models/photoshoot/isha.png",
+    "intendedUse": "Trendy accessories, vibrant cosmetics, contemporary ethnic wear, lifestyle goods"
+  }
+]

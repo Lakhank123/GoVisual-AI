@@ -1,20 +1,31 @@
 @import "tailwindcss";
 
 :root {
-  --background: #060a06;
-  --foreground: #ffffff;
-  --surface: #0d160d;
-  --border: #1a2a1a;
-  --accent: #39ff14;
-  --secondary: #0D9488;
-  --text-primary: #ffffff;
-  --text-secondary: #3a5a3a;
-  --text-muted: #2a4a2a;
+  --background: #0B0907;
+  --foreground: #F7F3ED;
+  --surface: #14100D;
+  --card: #21170F;
+  --border: #3B2B1E;
+  --accent: #E8B66F;
+  --accent-hover: #F3CB8D;
+  --primary: #E8B66F;
+  --primary-hover: #F3CB8D;
+  --coffee: #6F452C;
+  --secondary: #6F452C;
+  --text-primary: #F7F3ED;
+  --text-secondary: #B9AA99;
+  --text-muted: #8A7B6D;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-card: var(--card);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-coffee: var(--coffee);
   --font-sans: var(--font-inter);
   --font-mono: var(--font-geist-mono);
   --font-space-grotesk: var(--font-space-grotesk);
@@ -38,20 +49,65 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #060a06;
+  background: #0B0907;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1a2a1a;
+  background: #3B2B1E;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #2a4a2a;
+  background: #6F452C;
 }
 
 /* Selection styling */
 ::selection {
-  background: rgba(57, 255, 20, 0.2);
-  color: #39ff14;
+  background: rgba(232, 182, 111, 0.25);
+  color: #E8B66F;
+}
+
+/* Legacy decorative green color fallbacks mapped to Espresso & Gold palette */
+.bg-\[\#060a06\], .bg-\[\#080f08\], .bg-\[\#0a0f0a\], .bg-\[\#081008\] {
+  background-color: #0B0907 !important;
+}
+.bg-\[\#0d160d\], .bg-\[\#0a1a0a\], .bg-\[\#0b140b\] {
+  background-color: #14100D !important;
+}
+.bg-\[\#112211\], .bg-\[\#142214\], .bg-\[\#122012\], .bg-\[\#162616\], .bg-\[\#0f1c0f\] {
+  background-color: #21170F !important;
+}
+.border-\[\#1a2a1a\], .border-\[\#1c2e1c\], .border-\[\#233823\], .border-\[\#2a3a2a\] {
+  border-color: #3B2B1E !important;
+}
+.text-\[\#39ff14\] {
+  color: #E8B66F !important;
+}
+.bg-\[\#39ff14\] {
+  background-color: #E8B66F !important;
+  color: #0B0907 !important;
+}
+.bg-\[\#39ff14\]:hover {
+  background-color: #F3CB8D !important;
+}
+.border-\[\#39ff14\] {
+  border-color: #E8B66F !important;
+}
+.text-\[\#3a5a3a\], .text-\[\#2a4a2a\], .text-\[\#4a6a4a\] {
+  color: #B9AA99 !important;
+}
+.bg-\[\#2a4a2a\], .bg-\[\#1e361e\] {
+  background-color: #3B2B1E !important;
+}
+.border-\[\#2a4a2a\] {
+  border-color: #3B2B1E !important;
+}
+.placeholder-\[\#2a4a2a\]::placeholder {
+  color: #8A7B6D !important;
+}
+.bg-\[\#39ff14\]\/20, .bg-\[\#39ff14\]\/10, .bg-\[\#39ff14\]\/5, .bg-\[\#39ff14\]\/40 {
+  background-color: rgba(232, 182, 111, 0.15) !important;
+}
+.border-\[\#39ff14\]\/20, .border-\[\#39ff14\]\/30, .border-\[\#39ff14\]\/40 {
+  border-color: rgba(232, 182, 111, 0.35) !important;
 }

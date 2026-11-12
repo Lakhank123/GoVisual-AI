@@ -1,7 +1,7 @@
 /* BorderGlow.css */
 
 .border-glow-card {
-  --card-bg: #120f17;
+  --card-bg: #21170F;
   --edge-sensitivity: 30;
   --border-radius: 28px;
   --glow-padding: 40px;
@@ -9,7 +9,7 @@
   --fill-opacity: 0.5;
   --edge-proximity: 0;
   --cursor-angle: 0deg;
-  --gradient-base: linear-gradient(#c084fc 0 100%);
+  --gradient-base: linear-gradient(#E8B66F 0 100%);
   
   position: relative;
   border-radius: var(--border-radius);
@@ -161,6 +161,7 @@
 /* Dark theme optimization */
 @media (prefers-color-scheme: dark) {
   .border-glow-card {
-    --card-bg: #0d160d;
+    --card-bg: #21170F;
   }
 }
+

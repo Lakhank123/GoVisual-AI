@@ -10,8 +10,8 @@ logger = logging.getLogger(__name__)
 
 class GroqBrandIntelligence(BrandIntelligenceProvider):
     
-    def __init__(self, model_name: str = "llama-3.3-70b-versatile"):
-        self.model_name = model_name
+    def __init__(self, model_name: str = ""):
+        self.model_name = model_name or os.getenv("GROQ_MODEL", "openai/gpt-oss-120b").strip()
         self.api_key = os.getenv("GROQ_API_KEY", "").strip()
 
     async def analyze_brand_signals(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -78,7 +78,16 @@ class GroqBrandIntelligence(BrandIntelligenceProvider):
         5. Also populate `primary_color`, `secondary_color`, `accent_colors`, and `dominant_color` under `visual_dna` using standard ConfidenceField objects.
         """
         
-        prompt = f"Raw signals to analyze:\n{json.dumps(raw_data, indent=2)}\n\nGenerate the Brand Brain JSON."
+        def sanitize_data(obj):
+            if isinstance(obj, dict):
+                return {k: sanitize_data(v) if "base64" not in k.lower() else "[BASE64_REMOVED]" for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [sanitize_data(item) for item in obj]
+            return obj
+            
+        sanitized_data = sanitize_data(raw_data)
+        
+        prompt = f"Raw signals to analyze:\n{json.dumps(sanitized_data, indent=2)}\n\nGenerate the Brand Brain JSON."
         
         payload = {
             "model": self.model_name,
@@ -100,7 +109,10 @@ class GroqBrandIntelligence(BrandIntelligenceProvider):
         print("Calling Groq...")
         async with httpx.AsyncClient(timeout=45.0) as client:
             response = await client.post(url, json=payload, headers=headers)
-            response.raise_for_status()
+            if response.is_error:
+                detail = response.text[:500]
+                logger.error("Groq request failed (%s): %s", response.status_code, detail)
+                raise ValueError(f"Groq analysis failed ({response.status_code}): {detail}")
             data = response.json()
             print("Groq response received")
             print("Parsing response...")

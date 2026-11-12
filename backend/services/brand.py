@@ -82,7 +82,18 @@ class BrandService:
             return self._mock_profile(place_id)
 
     async def download_photo(self, url: str) -> bytes:
-        async with httpx.AsyncClient(timeout=15) as client:
+        if not url:
+            return b""
+        if os.path.exists(url):
+            with open(url, "rb") as f:
+                return f.read()
+        if url.startswith("/static/generated/") or url.startswith("static/generated/"):
+            filename = os.path.basename(url)
+            local_path = os.path.join("generated_images", filename)
+            if os.path.exists(local_path):
+                with open(local_path, "rb") as f:
+                    return f.read()
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
             r = await client.get(url)
             return r.content
 

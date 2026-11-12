@@ -1,5 +1,6 @@
 import os
 import base64
+from typing import Optional
 
 try:
     import cloudinary
@@ -17,23 +18,49 @@ class StorageService:
         self.base_url = os.getenv("PUBLIC_BACKEND_URL", "http://localhost:8000")
         self.cloud_ready = False
 
+        self._configure_cloudinary()
+
+    def _configure_cloudinary(self) -> bool:
         cloud_name = os.getenv("CLOUDINARY_CLOUD_NAME", "").strip()
         api_key = os.getenv("CLOUDINARY_API_KEY", "").strip()
         api_secret = os.getenv("CLOUDINARY_API_SECRET", "").strip()
 
-        if (not self.use_local) and cloudinary and cloud_name and api_key and api_secret:
+        if cloudinary and cloud_name and api_key and api_secret:
             cloudinary.config(
                 cloud_name=cloud_name,
                 api_key=api_key,
                 api_secret=api_secret,
                 secure=True,
             )
-            self.cloud_ready = True
+            if not self.use_local:
+                self.cloud_ready = True
+            return True
+        return False
+
+    def is_cloudinary_configured(self) -> bool:
+        cloud_name = os.getenv("CLOUDINARY_CLOUD_NAME", "").strip()
+        api_key = os.getenv("CLOUDINARY_API_KEY", "").strip()
+        api_secret = os.getenv("CLOUDINARY_API_SECRET", "").strip()
+        return bool(cloudinary and cloud_name and api_key and api_secret)
 
     async def upload(self, image_bytes: bytes, folder: str, filename: str) -> str:
         if self.cloud_ready:
             return self._save_cloudinary(image_bytes, folder, filename)
         return self._save_local(image_bytes, filename)
+
+    def upload_public_jpeg(self, image_bytes: bytes, folder: str = "govisual_creatives", filename: str = "creative.jpg") -> str:
+        """
+        Uploads image directly to Cloudinary regardless of USE_LOCAL_STORAGE setting,
+        returning a secure public HTTPS URL suitable for third-party platforms like Instagram.
+        """
+        if not self.is_cloudinary_configured():
+            raise ValueError(
+                "Cloudinary is not configured. Please set CLOUDINARY_CLOUD_NAME, "
+                "CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET in your backend/.env."
+            )
+        # Ensure configured
+        self._configure_cloudinary()
+        return self._save_cloudinary(image_bytes, folder, filename)
 
     def _save_cloudinary(self, image_bytes: bytes, folder: str, filename: str) -> str:
         encoded = base64.b64encode(image_bytes).decode("utf-8")

@@ -106,15 +106,15 @@ export default function PromptInspector() {
   };
 
   return (
-    <div style={{ padding: 40, background: "#060a06", color: "#fff", minHeight: "100vh", fontFamily: "sans-serif" }}>
-      <h1 style={{ color: "#39ff14" }}>Prompt Inspector</h1>
-      <p style={{ color: "#aaa" }}>Debug and test the prompt generation endpoints.</p>
+    <div style={{ padding: 40, background: "#0B0907", color: "#F7F3ED", minHeight: "100vh", fontFamily: "sans-serif" }}>
+      <h1 style={{ color: "#E8B66F" }}>Prompt Inspector</h1>
+      <p style={{ color: "#B9AA99" }}>Debug and test the prompt generation endpoints.</p>
 
       <div style={{ display: "flex", gap: 20, marginTop: 20 }}>
         <div style={{ flex: 1 }}>
           <h3>Creative Request JSON</h3>
           <textarea
-            style={{ width: "100%", height: 150, background: "#111", color: "#fff", padding: 10, border: "1px solid #333" }}
+            style={{ width: "100%", height: 150, background: "#14100D", color: "#F7F3ED", padding: 10, border: "1px solid #3B2B1E" }}
             value={creativeRequest}
             onChange={(e) => setCreativeRequest(e.target.value)}
           />
@@ -122,7 +122,7 @@ export default function PromptInspector() {
         <div style={{ flex: 1 }}>
           <h3>Brand Brain JSON</h3>
           <textarea
-            style={{ width: "100%", height: 150, background: "#111", color: "#fff", padding: 10, border: "1px solid #333" }}
+            style={{ width: "100%", height: 150, background: "#14100D", color: "#F7F3ED", padding: 10, border: "1px solid #3B2B1E" }}
             value={brandBrain}
             onChange={(e) => setBrandBrain(e.target.value)}
           />
@@ -132,17 +132,17 @@ export default function PromptInspector() {
       <div style={{ marginTop: 20, display: "flex", gap: 10 }}>
         <button 
           onClick={handleProcess} 
-          style={{ padding: "10px 20px", background: "#39ff14", color: "#000", border: "none", fontWeight: "bold", cursor: "pointer" }}>
+          style={{ padding: "10px 20px", background: "#E8B66F", color: "#0B0907", border: "none", fontWeight: "bold", cursor: "pointer", borderRadius: 6 }}>
           Run /process (Default)
         </button>
         <button 
           onClick={handleAssemble} 
-          style={{ padding: "10px 20px", background: "#444", color: "#fff", border: "none", cursor: "pointer" }}>
+          style={{ padding: "10px 20px", background: "#21170F", color: "#F7F3ED", border: "1px solid #3B2B1E", cursor: "pointer", borderRadius: 6 }}>
           Run /assemble
         </button>
         <button 
           onClick={handleOptimize} 
-          style={{ padding: "10px 20px", background: "#444", color: "#fff", border: "none", cursor: "pointer" }}>
+          style={{ padding: "10px 20px", background: "#21170F", color: "#F7F3ED", border: "1px solid #3B2B1E", cursor: "pointer", borderRadius: 6 }}>
           Run /optimize
         </button>
       </div>
@@ -151,8 +151,8 @@ export default function PromptInspector() {
       {error && <div style={{ color: "red", marginTop: 20, background: "#220000", padding: 10 }}>{error}</div>}
       
       {result && (
-        <div style={{ marginTop: 30, background: "#111", padding: 20, border: "1px solid #333", borderRadius: 8 }}>
-          <h2 style={{ margin: "0 0 10px 0", color: "#39ff14" }}>Result: {result.type}</h2>
+        <div style={{ marginTop: 30, background: "#14100D", padding: 20, border: "1px solid #3B2B1E", borderRadius: 8 }}>
+          <h2 style={{ margin: "0 0 10px 0", color: "#E8B66F" }}>Result: {result.type}</h2>
           <pre style={{ overflowX: "auto", color: "#ddd" }}>
             {JSON.stringify(result.data, null, 2)}
           </pre>

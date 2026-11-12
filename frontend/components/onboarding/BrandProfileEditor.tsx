@@ -14,7 +14,7 @@ export default function BrandProfileEditor() {
     if (!field) return null;
 
     return (
-      <div className="bg-[#0d160d] border border-[#1a2a1a] rounded-xl p-5 mb-4">
+      <div className="bg-[#21170F] border border-[#3B2B1E] rounded-xl p-5 mb-4">
         <div className="flex items-center justify-between mb-3">
           <label className="block text-sm text-white font-semibold">{label}</label>
           <ConfidenceBadge field={field} />
@@ -22,13 +22,13 @@ export default function BrandProfileEditor() {
         
         {type === 'textarea' ? (
           <textarea
-            className="w-full bg-[#080f08] border border-[#1a2a1a] rounded-lg px-4 py-3 text-sm text-white focus:outline-none focus:border-[#39ff14] min-h-[80px]"
+            className="w-full bg-[#14100D] border border-[#3B2B1E] rounded-lg px-4 py-3 text-sm text-white focus:outline-none focus:border-[#E8B66F] min-h-[80px]"
             value={field.value || ''}
             onChange={(e) => updateInferredField(key, e.target.value)}
           />
         ) : (
           <input
-            className="w-full bg-[#080f08] border border-[#1a2a1a] rounded-lg px-4 py-3 text-sm text-white focus:outline-none focus:border-[#39ff14]"
+            className="w-full bg-[#14100D] border border-[#3B2B1E] rounded-lg px-4 py-3 text-sm text-white focus:outline-none focus:border-[#E8B66F]"
             value={Array.isArray(field.value) ? field.value.join(', ') : field.value || ''}
             onChange={(e) => {
               const val = Array.isArray(field.value) ? e.target.value.split(',').map(s => s.trim()) : e.target.value;
@@ -45,14 +45,14 @@ export default function BrandProfileEditor() {
     if (!field) return null;
 
     return (
-      <div className="bg-[#0d160d] border border-[#1a2a1a] rounded-xl p-5 mb-4">
+      <div className="bg-[#21170F] border border-[#3B2B1E] rounded-xl p-5 mb-4">
         <div className="flex items-center justify-between mb-3">
           <label className="block text-sm text-white font-semibold">{label}</label>
           <ConfidenceBadge field={field} />
         </div>
         
         <div className="flex items-center gap-4">
-          <div className="relative w-12 h-12 rounded-lg overflow-hidden border border-[#1a2a1a] shrink-0">
+          <div className="relative w-12 h-12 rounded-lg overflow-hidden border border-[#3B2B1E] shrink-0">
             <input
               type="color"
               className="absolute -top-2 -left-2 w-16 h-16 cursor-pointer"
@@ -61,7 +61,7 @@ export default function BrandProfileEditor() {
             />
           </div>
           <input
-            className="w-full bg-[#080f08] border border-[#1a2a1a] rounded-lg px-4 py-3 text-sm text-white focus:outline-none focus:border-[#39ff14]"
+            className="w-full bg-[#14100D] border border-[#3B2B1E] rounded-lg px-4 py-3 text-sm text-white focus:outline-none focus:border-[#E8B66F]"
             value={field.value || ''}
             onChange={(e) => updateInferredField(key, e.target.value)}
             placeholder="#HEXCODE"
@@ -76,7 +76,7 @@ export default function BrandProfileEditor() {
       <div className="lg:col-span-2 space-y-6">
         <div>
           <h2 className="font-space-grotesk text-2xl font-bold text-white mb-2">Review Brand Identity</h2>
-          <p className="text-[#3a5a3a] mb-6">We've extracted the following details. Everything is editable.</p>
+          <p className="text-[#B9AA99] mb-6">We've extracted the following details. Everything is editable.</p>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {renderField('brand_tone', 'Brand Tone')}
@@ -106,10 +106,10 @@ export default function BrandProfileEditor() {
         </div>
         
         <div className="flex gap-4 pt-4">
-          <button onClick={() => setStep(3)} className="w-1/3 bg-[#0d160d] border border-[#1a2a1a] text-white py-4 rounded-xl hover:bg-[#1a2a1a] transition-all font-semibold">
+          <button onClick={() => setStep(3)} className="w-1/3 bg-[#21170F] border border-[#3B2B1E] text-white py-4 rounded-xl hover:bg-[#2B1E14] transition-all font-semibold">
             Re-Analyze
           </button>
-          <button onClick={() => setStep(5)} className="w-2/3 bg-[#39ff14] text-black font-bold py-4 rounded-xl hover:opacity-90 transition-all cursor-pointer">
+          <button onClick={() => setStep(6)} className="w-2/3 bg-[#E8B66F] text-[#0B0907] font-bold py-4 rounded-xl hover:bg-[#F3CB8D] transition-all cursor-pointer">
             Looks Good — Next
           </button>
         </div>

@@ -48,7 +48,7 @@ export default function VideoPage() {
   const formatDims: Record<string, string> = { "9:16": "1080×1920 (Reels/Story)", "1:1": "1080×1080 (Feed)", "16:9": "1920×1080 (YouTube)" };
 
   return (
-    <div style={{ minHeight: "100vh", background: "#060a06", color: "#e8e8f0", fontFamily: "system-ui, sans-serif", padding: "40px 24px" }}>
+    <div style={{ minHeight: "100vh", background: "#0B0907", color: "#e8e8f0", fontFamily: "system-ui, sans-serif", padding: "40px 24px" }}>
       <div style={{ maxWidth: 860, margin: "0 auto" }}>
 
         <div style={{ marginBottom: 36 }}>

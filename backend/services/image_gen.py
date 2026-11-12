@@ -16,6 +16,9 @@ import asyncio
 import hashlib
 import base64
 import logging
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +28,11 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL   = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-preview-image-generation")
 HF_TOKEN       = os.getenv("HF_API_TOKEN", "").strip()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+if not OPENAI_API_KEY:
+    OPENAI_API_KEY = os.getenv("OPEN_AI_API_KEY", "").strip()
+OPENAI_IMAGE_MODEL = os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-1-mini").strip()
+OPENAI_IMAGE_SIZE = os.getenv("OPENAI_IMAGE_SIZE", "1024x1024").strip()
+OPENAI_IMAGE_QUALITY = os.getenv("OPENAI_IMAGE_QUALITY", "standard").strip()
 
 # HuggingFace model configs — each with correct parameters
 HF_MODELS = [
@@ -48,7 +56,10 @@ HF_MODELS = [
             "guidance_scale": 7.5,
             "negative_prompt": (
                 "blurry, low quality, distorted, watermark, "
-                "text overlay, bad anatomy, ugly, deformed"
+                "text overlay, bad anatomy, ugly, deformed, duplicate products, "
+                "extra objects, malformed objects, floating product, unrealistic shadows, "
+                "incorrect perspective, plastic, CGI, excessive blur, oversaturation, "
+                "random text, fake logos, incorrect branding"
             ),
         },
     },
@@ -62,7 +73,10 @@ HF_MODELS = [
             "guidance_scale": 7.5,
             "negative_prompt": (
                 "blurry, low quality, distorted, watermark, "
-                "text overlay, bad anatomy, ugly"
+                "text overlay, bad anatomy, ugly, deformed, duplicate products, "
+                "extra objects, malformed objects, floating product, unrealistic shadows, "
+                "incorrect perspective, plastic, CGI, excessive blur, oversaturation, "
+                "random text, fake logos, incorrect branding"
             ),
         },
     },
@@ -94,8 +108,8 @@ class ImageGenService:
 
         # Log the chosen provider
         if self.provider == "openai":
-            logger.info("[ImageGen] [OK] Provider: OpenAI DALL-E 3")
-            print("[ImageGen] [OK] Provider: OpenAI DALL-E 3")
+            logger.info("[ImageGen] [OK] Provider: OpenAI (%s, %s quality)", OPENAI_IMAGE_MODEL, OPENAI_IMAGE_QUALITY)
+            print(f"[ImageGen] [OK] Provider: OpenAI ({OPENAI_IMAGE_MODEL}, {OPENAI_IMAGE_QUALITY} quality)")
         elif self.provider == "gemini":
             logger.info(f"[ImageGen] [OK] Provider: Google Gemini ({GEMINI_MODEL})")
             print(f"[ImageGen] [OK] Provider: Google Gemini ({GEMINI_MODEL})")
@@ -152,11 +166,11 @@ class ImageGenService:
         if not cleaned.endswith("."):
             cleaned += "."
             
-        # Add strong background-only instructions
+        # Add strong background-only instructions to leave space for compositing
         bg_suffix = (
-            " Empty background, no products, no bottles, no phones, no shoes, no food, "
-            "no foreground objects, empty copy space in the center, premium commercial studio setup, "
-            "professional lighting, realistic studio reflections, depth of field. Clean image, no text, textless."
+            " Maintain empty compositional space in the center for product placement. "
+            "Premium commercial studio setup, professional lighting, realistic studio reflections, "
+            "depth of field. Clean image, no text, textless."
         )
         return cleaned + bg_suffix
 
@@ -165,74 +179,46 @@ class ImageGenService:
         return self.provider
 
     async def generate(self, prompt: str, image_bytes: bytes, product_name: str = "") -> bytes:
-        """Generate an image from a text prompt. Falls back gracefully."""
+        """Generate an image from a text prompt. Strict provider enforcement."""
         prompt = self._clean_prompt(prompt, product_name)
 
-        # Try OpenAI first if configured
         if self.provider == "openai":
             result = await self._openai_generate(prompt)
             if result is not None:
                 return result
-            print("[ImageGen] [WARN] OpenAI failed -- trying Gemini fallback...")
-            if GEMINI_API_KEY:
-                result = await self._gemini_generate(prompt, image_bytes)
-                if result is not None:
-                    return result
-            print("[ImageGen] [WARN] Gemini failed -- trying HuggingFace fallback...")
-            if HF_TOKEN:
-                result = await self._hf_generate_with_fallback(prompt)
-                if result is not None:
-                    return result
-            print("[ImageGen] [WARN] HuggingFace failed -- trying Pollinations fallback...")
-            result = await self._pollinations_generate(prompt)
-            if result is not None:
-                return result
+            raise Exception("OpenAI image generation failed.")
 
-        # Try Gemini first if configured
         elif self.provider == "gemini":
             result = await self._gemini_generate(prompt, image_bytes)
             if result is not None:
                 return result
-            print("[ImageGen] [WARN] Gemini failed -- trying HuggingFace fallback...")
-            if HF_TOKEN:
-                result = await self._hf_generate_with_fallback(prompt)
-                if result is not None:
-                    return result
-            print("[ImageGen] [WARN] HuggingFace failed -- trying Pollinations fallback...")
-            result = await self._pollinations_generate(prompt)
-            if result is not None:
-                return result
+            raise Exception("Gemini image generation failed.")
 
-        # Try HuggingFace with multi-model fallback
         elif self.provider == "huggingface":
-            result = await self._hf_generate_with_fallback(prompt)
+            result = await self._hf_generate_with_fallback(prompt, image_bytes)
             if result is not None:
                 return result
-            print("[ImageGen] [WARN] HuggingFace failed -- trying Pollinations fallback...")
-            result = await self._pollinations_generate(prompt)
-            if result is not None:
-                return result
+            raise Exception("HuggingFace image generation failed for all models.")
 
-        # Try Pollinations if configured
         elif self.provider == "pollinations":
             result = await self._pollinations_generate(prompt)
             if result is not None:
                 return result
+            raise Exception("Pollinations image generation failed.")
 
-        # Last resort: placeholder
-        print("[ImageGen] [FAIL] All providers failed -- returning placeholder image")
-        return self._placeholder(prompt)
+        raise Exception(f"Provider {self.provider} failed or unsupported.")
 
     # ── OpenAI image generation ──────────────────────────────────────────
 
     async def _openai_generate(self, prompt: str) -> bytes | None:
-        """Generate an image using OpenAI's DALL-E 3."""
+        """Generate a standard-quality image using the configured OpenAI model."""
         import httpx
         payload = {
-            "model": "dall-e-3",
+            "model": OPENAI_IMAGE_MODEL,
             "prompt": prompt[:4000],  # DALL-E 3 character limit is 4000
             "n": 1,
-            "size": "1024x1024"
+            "size": OPENAI_IMAGE_SIZE,
+            "quality": OPENAI_IMAGE_QUALITY,
         }
         headers = {
             "Authorization": f"Bearer {OPENAI_API_KEY}",
@@ -241,36 +227,36 @@ class ImageGenService:
         url = "https://api.openai.com/v1/images/generations"
         try:
             async with httpx.AsyncClient(timeout=120) as client:
-                print("[OpenAI DALL-E] Sending request to DALL-E 3...")
+                print(f"[OpenAI] Sending request to {OPENAI_IMAGE_MODEL} ({OPENAI_IMAGE_QUALITY} quality)...")
                 response = await client.post(url, json=payload, headers=headers)
             if response.status_code >= 400:
-                print(f"[OpenAI DALL-E] [FAIL] HTTP {response.status_code}: {response.text[:300]}")
+                print(f"[OpenAI] [FAIL] HTTP {response.status_code}: {response.text[:300]}")
                 return None
             data = response.json()
             img_data = data.get("data", [])
             if not img_data:
-                print(f"[OpenAI DALL-E] [FAIL] No data in response: {str(data)[:200]}")
+                print(f"[OpenAI] [FAIL] No data in response: {str(data)[:200]}")
                 return None
             
             # Try to download from URL first
             url_str = img_data[0].get("url")
             if url_str:
-                print(f"[OpenAI DALL-E] Downloading image from url: {url_str[:100]}...")
+                print(f"[OpenAI] Downloading generated image...")
                 async with httpx.AsyncClient(timeout=60) as dl_client:
                     dl_resp = await dl_client.get(url_str)
                     if dl_resp.status_code == 200:
-                        print(f"[OpenAI DALL-E] [OK] Image downloaded successfully ({len(dl_resp.content)} bytes)")
+                        print(f"[OpenAI] [OK] Image downloaded successfully ({len(dl_resp.content)} bytes)")
                         return dl_resp.content
             
             # Fallback to decoding b64_json
             b64_str = img_data[0].get("b64_json")
             if b64_str:
                 img_bytes = base64.b64decode(b64_str)
-                print(f"[OpenAI DALL-E] [OK] Image decoded from b64 successfully ({len(img_bytes)} bytes)")
+                print(f"[OpenAI] [OK] Image decoded from b64 successfully ({len(img_bytes)} bytes)")
                 return img_bytes
             return None
         except Exception as e:
-            print(f"[OpenAI DALL-E] [FAIL] Exception: {e}")
+            print(f"[OpenAI] [FAIL] Exception: {e}")
             return None
 
     # ── Gemini image generation ──────────────────────────────────────────
@@ -340,99 +326,49 @@ class ImageGenService:
 
     # ── HuggingFace multi-model fallback ─────────────────────────────────
 
-    async def _hf_generate_with_fallback(self, prompt: str) -> bytes | None:
+    async def _hf_generate_with_fallback(self, prompt: str, image_bytes: bytes | None = None) -> bytes | None:
         """Try each HF model in order until one succeeds."""
         for model in HF_MODELS:
             print(f"[HF API] Trying {model['name']} ({model['id']})...")
-            result = await self._hf_call(prompt, model)
+            result = await self._hf_call(prompt, model, image_bytes)
             if result is not None:
                 return result
             print(f"[HF API] [FAIL] {model['name']} failed, trying next model...")
         return None
 
-    async def _hf_call(self, prompt: str, model: dict) -> bytes | None:
-        """Make a single HF Inference API call with correct model-specific params."""
-        import httpx
-
-        headers = {
-            "Authorization": f"Bearer {HF_TOKEN}",
-            "Content-Type":  "application/json",
-        }
-
-        payload = {
-            "inputs": prompt[:500],
-            "parameters": {**model["params"]},
-        }
-
-        # Remove negative_prompt for models that don't support it (FLUX)
-        if "FLUX" in model["id"] or "flux" in model["id"]:
-            payload["parameters"].pop("negative_prompt", None)
-
-        api_url = f"https://router.huggingface.co/hf-inference/models/{model['id']}"
-
+    async def _hf_call(self, prompt: str, model: dict, image_bytes: bytes | None = None) -> bytes | None:
+        """Make a single HF Inference API call using huggingface_hub."""
+        from huggingface_hub import InferenceClient
         try:
-            print(f"[HF API] DEBUG: Calling {api_url}")
-            print(f"[HF API] DEBUG: Payload keys: {list(payload.keys())}")
-            print(f"[HF API] DEBUG: Parameters: {payload.get('parameters', {})}")
-            async with httpx.AsyncClient(timeout=120) as client:
-                response = await client.post(api_url, json=payload, headers=headers)
-            print(f"[HF API] DEBUG: Status code = {response.status_code}")
-            print(f"[HF API] DEBUG: Response headers = {dict(response.headers)}")
+            print(f"[HF API] DEBUG: Initializing InferenceClient for {model['id']}")
+            client = InferenceClient(model=model["id"], token=HF_TOKEN)
+            
+            kwargs = {}
+            if "width" in model["params"]:
+                kwargs["width"] = model["params"]["width"]
+            if "height" in model["params"]:
+                kwargs["height"] = model["params"]["height"]
+            if "num_inference_steps" in model["params"]:
+                kwargs["num_inference_steps"] = model["params"]["num_inference_steps"]
+            if "guidance_scale" in model["params"] and ("FLUX" not in model["id"] and "flux" not in model["id"]):
+                kwargs["guidance_scale"] = model["params"]["guidance_scale"]
 
+            print(f"[HF API] DEBUG: Calling InferenceClient with kwargs: {kwargs}")
+            
+            import io
+            
+            # FORCE TEXT-TO-IMAGE: HF Serverless endpoints often reject image_to_image for FLUX/SDXL.
+            # Visual context is already embedded into the prompt via Groq/T5.
+            print(f"[HF API] DEBUG: Running text_to_image (Forced safely due to API constraints)")
+            image = await asyncio.to_thread(client.text_to_image, prompt[:1000], **kwargs)
+            
+            buf = io.BytesIO()
+            image.save(buf, format="JPEG", quality=90)
+            img_bytes = buf.getvalue()
+            
+            print(f"[HF API] [OK] {model['name']} -- {len(img_bytes)} bytes received")
+            return img_bytes
 
-            # Success
-            if response.status_code == 200:
-                content_type = response.headers.get("content-type", "")
-                content_length = len(response.content)
-                print(f"[HF API] DEBUG: Content-Type: {content_type}, Content length: {content_length}")
-                # Make sure we got an image, not a JSON error
-                if "image" in content_type or len(response.content) > 5000:
-                    print(f"[HF API] [OK] {model['name']} -- {len(response.content)} bytes received")
-                    return response.content
-                else:
-                    print(f"[HF API] [WARN] {model['name']} returned non-image response")
-                    print(f"[HF API] DEBUG: Response text: {response.text[:500]}")
-                    return None
-
-            # Model is loading — wait and retry once
-            if response.status_code == 503:
-                try:
-                    wait_info = response.json()
-                    wait_time = min(wait_info.get("estimated_time", 30), 60)
-                except Exception:
-                    wait_time = 30
-                print(f"[HF API] [WAIT] {model['name']} loading -- waiting {wait_time:.0f}s then retrying...")
-                await asyncio.sleep(wait_time)
-
-                async with httpx.AsyncClient(timeout=120) as client:
-                    response = await client.post(api_url, json=payload, headers=headers)
-
-                if response.status_code == 200:
-                    content_type = response.headers.get("content-type", "")
-                    if "image" in content_type or len(response.content) > 5000:
-                        print(f"[HF API] [OK] {model['name']} -- {len(response.content)} bytes (after retry)")
-                        return response.content
-
-                print(f"[HF API] [FAIL] {model['name']} still failed after retry: HTTP {response.status_code}")
-                return None
-
-            # Rate limited
-            if response.status_code == 429:
-                print(f"[HF API] [WARN] {model['name']} rate limited -- trying next model")
-                return None
-
-            # Bad request (wrong params)
-            if response.status_code == 422:
-                print(f"[HF API] [FAIL] {model['name']} rejected params (422): {response.text[:200]}")
-                return None
-
-            # Other errors
-            print(f"[HF API] [FAIL] {model['name']} HTTP {response.status_code}: {response.text[:200]}")
-            return None
-
-        except asyncio.TimeoutError:
-            print(f"[HF API] [FAIL] {model['name']} timed out after 120s")
-            return None
         except Exception as e:
             print(f"[HF API] [FAIL] {model['name']} exception: {e}")
             return None

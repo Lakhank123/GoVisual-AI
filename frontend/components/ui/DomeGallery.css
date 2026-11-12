@@ -3,7 +3,7 @@
 .sphere-root {
   --radius: 800px;
   --viewer-pad: 16px;
-  --overlay-blur-color: #120f17;
+  --overlay-blur-color: #0B0907;
   --tile-radius: 30px;
   --enlarge-radius: 30px;
   --image-filter: grayscale(1);
@@ -86,7 +86,7 @@ body.dg-scroll-lock {
   user-select: none;
   outline: none;
   transition: transform 0.15s ease;
-  background: #0d160d;
+  background: #14100D;
 }
 
 .item__image:hover,
@@ -109,7 +109,7 @@ body.dg-scroll-lock {
   border-radius: var(--tile-radius);
   overflow: hidden;
   pointer-events: none;
-  background: #0d160d;
+  background: #14100D;
 }
 
 .overlay {
