@@ -28,6 +28,19 @@ import tempfile
 import asyncio
 from dotenv import load_dotenv
 
+# Increase Starlette multipart parsing limits (default is 1024KB which rejects large text fields/payloads)
+try:
+    import starlette.formparsers
+    import starlette.requests
+    MAX_MULTIPART_SIZE = 50 * 1024 * 1024  # 50MB
+    starlette.formparsers.MultiPartParser.max_part_size = MAX_MULTIPART_SIZE
+    if hasattr(starlette.formparsers.MultiPartParser.__init__, "__kwdefaults__") and starlette.formparsers.MultiPartParser.__init__.__kwdefaults__:
+        starlette.formparsers.MultiPartParser.__init__.__kwdefaults__["max_part_size"] = MAX_MULTIPART_SIZE
+    if hasattr(starlette.requests.Request.form, "__kwdefaults__") and starlette.requests.Request.form.__kwdefaults__:
+        starlette.requests.Request.form.__kwdefaults__["max_part_size"] = MAX_MULTIPART_SIZE
+except Exception as e:
+    pass
+
 # Always load backend/.env regardless of where uvicorn was started from.
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"), override=True)
@@ -75,7 +88,13 @@ app.mount("/static/videos", StaticFiles(directory="generated_videos"), name="vid
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
+    ],
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

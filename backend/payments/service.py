@@ -33,6 +33,7 @@ from payments.schemas import (
 )
 from payments.base import PaymentGateway
 from payments.factory import PaymentGatewayFactory
+from payments.credit_guard import CreditGuard
 
 logger = logging.getLogger("GoVisual.BillingService")
 
@@ -308,6 +309,21 @@ class BillingService:
         """Retrieves or initializes current calendar month quota in Asia/Kolkata timezone."""
         ym = self.get_current_year_month()
         record = self.repo.get_current_quota_record(user_id, ym)
+
+        # Synchronize with persistent brand_asset_library count if in-memory record is fresh
+        if record["images_generated"] == 0:
+            try:
+                from services.auth import supabase
+                res = supabase.table("brand_asset_library").select("id", count="exact").eq("business_id", user_id).execute()
+                if res.count is not None and res.count > 0:
+                    record["images_generated"] = res.count
+                    record["three_image_runs"] = res.count // 3
+                    user = self.repo.get_or_create_user(user_id)
+                    free_limit = AUTHORITATIVE_PLANS["free_monthly"].monthly_image_credits
+                    user["credits_remaining"] = max(0, free_limit - res.count)
+            except Exception as qe:
+                logger.debug("[Payments] DB quota synchronization notice: %s", qe)
+
         return MonthlyQuotaUsage(
             year_month=record["year_month"],
             images_generated=record["images_generated"],

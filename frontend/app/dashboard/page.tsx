@@ -39,6 +39,7 @@ export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<"overview" | "creatives" | "instagram">("overview");
   const [connected, setConnected] = useState(false);
   const [actualCreatives, setActualCreatives] = useState<any[]>([]);
+  const [loadingTimedOut, setLoadingTimedOut] = useState(false);
   const router = useRouter();
   const { session, logout, authLoading, profileLoading, profileError, refreshProfile, hasCompletedOnboarding } = useDemoSession();
   const businessName = session.brandProfile?.businessName || session.workspace?.businessName || "Your Shop";
@@ -51,15 +52,54 @@ export default function DashboardPage() {
     router.push("/");
   };
 
+  // Safety timeout boundary: prevent infinite "Loading your workspace..." hang
   useEffect(() => {
-    // Only redirect when authentication and profile loading have both settled
-    if (!authLoading && !profileLoading) {
-      // If there was an error retrieving the profile, do NOT assume onboarding is incomplete
-      if (!profileError && !hasCompletedOnboarding) {
-        router.replace("/onboard");
+    let timer: NodeJS.Timeout | undefined;
+    if (authLoading || profileLoading) {
+      timer = setTimeout(() => {
+        setLoadingTimedOut(true);
+      }, 5000);
+    } else {
+      setLoadingTimedOut(false);
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [authLoading, profileLoading]);
+
+  // If unauthenticated and no brand profile exists, redirect to login
+  useEffect(() => {
+    if (!authLoading && !session.user && !hasBrandProfile) {
+      router.replace("/auth?redirect=/dashboard");
+    }
+  }, [authLoading, session.user, hasBrandProfile, router]);
+
+  // Self-heal workspace if brand name is uninitialized
+  useEffect(() => {
+    if (typeof window !== "undefined" && (!session.brandProfile?.businessName || session.brandProfile.businessName === "Your Shop" || session.brandProfile.businessName === "My Brand")) {
+      const email = session.user?.email;
+      const candidateKeys = [
+        email ? `govisual_user_data_${email}` : null,
+        email ? `gv_backup_${email}` : null,
+        session.user?.id ? `govisual_user_data_${session.user.id}` : null,
+        'govisual_user_data_latest',
+      ].filter(Boolean) as string[];
+
+      for (const key of candidateKeys) {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          try {
+            const data = JSON.parse(raw);
+            const name = data.businessName || data.brand_name;
+            if (name && name !== "Your Shop" && name !== "My Brand") {
+              refreshProfile();
+              break;
+            }
+          } catch {}
+        }
       }
     }
-  }, [authLoading, profileLoading, profileError, hasCompletedOnboarding, router]);
+  }, [session.brandProfile, session.user, refreshProfile]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -70,10 +110,12 @@ export default function DashboardPage() {
       }
     }
 
-    async function loadData() {
+    const abortController = new AbortController();
 
+    async function loadData() {
       try {
-        const sessions = await getGeneratedAssets();
+        const sessions = await getGeneratedAssets(session.user?.id, abortController.signal);
+        if (abortController.signal.aborted) return;
         const allAssets: any[] = [];
         sessions.forEach((s: any) => {
           if (s.generated_assets) {
@@ -83,13 +125,67 @@ export default function DashboardPage() {
         allAssets.sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
         setActualCreatives(allAssets);
       } catch (e) {
-        console.error("Failed to load assets", e);
+        if (!abortController.signal.aborted) {
+          console.error("Failed to load assets", e);
+        }
       }
     }
-    loadData();
-  }, []);
+
+    if (session.user) {
+      loadData();
+    }
+
+    return () => {
+      abortController.abort();
+    };
+  }, [session.user]);
 
   if (authLoading || profileLoading) {
+    if (loadingTimedOut) {
+      return (
+        <div style={{ minHeight: "100vh", background: "#0B0907", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "24px", textAlign: "center" }}>
+          <div style={{ color: "#E8B66F", fontSize: "16px", fontWeight: "bold", marginBottom: "8px" }}>
+            Workspace loading is taking longer than usual
+          </div>
+          <div style={{ color: "#B9AA99", fontSize: "14px", maxWidth: "420px", marginBottom: "20px" }}>
+            Your connection to the workspace or authentication service might be slow. You can retry loading or continue to your workspace.
+          </div>
+          <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", justifyContent: "center" }}>
+            <button
+              onClick={() => {
+                setLoadingTimedOut(false);
+                refreshProfile();
+              }}
+              style={{
+                padding: "10px 24px",
+                background: "linear-gradient(to right, #C49B5A, #E8B66F)",
+                color: "#0B0907",
+                fontWeight: "bold",
+                borderRadius: "12px",
+                border: "none",
+                cursor: "pointer",
+              }}
+            >
+              Retry Loading
+            </button>
+            <button
+              onClick={() => setLoadingTimedOut(false)}
+              style={{
+                padding: "10px 20px",
+                background: "transparent",
+                color: "#E8B66F",
+                border: "1px solid #3B2B1E",
+                borderRadius: "12px",
+                cursor: "pointer",
+              }}
+            >
+              Continue to Workspace
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div style={{ minHeight: "100vh", background: "#0B0907", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <div style={{ color: "#E8B66F", fontSize: "14px" }}>Loading your workspace...</div>
@@ -120,14 +216,6 @@ export default function DashboardPage() {
         >
           Retry Loading Workspace
         </button>
-      </div>
-    );
-  }
-
-  if (!hasCompletedOnboarding) {
-    return (
-      <div style={{ minHeight: "100vh", background: "#0B0907", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ color: "#E8B66F", fontSize: "14px" }}>Redirecting to onboarding...</div>
       </div>
     );
   }

@@ -1,0 +1,63 @@
+# GoVisual AI — Scientific Evaluation Configuration
+project_name: "GoVisual AI Model Evaluation & Benchmarking"
+version: "1.0.0"
+
+dataset:
+  path: "govisual_dataset_v2.csv"
+  total_samples: 650
+  train_split: 520      # 80%
+  val_split: 65         # 10%
+  test_split: 65        # 10%
+  seed: 42
+  categories:
+    - food
+    - pharmacy
+    - clothing
+    - electronics
+    - salon
+    - home_decor
+    - jewellery
+
+models:
+  t5:
+    architecture: "t5-small"
+    parameters: 60506624
+    checkpoint_path: "backend/ml_model"
+    input_prefix: "generate prompts: "
+    max_input_length: 256
+    max_target_length: 512
+    generation_config:
+      num_beams: 4
+      early_stopping: true
+      no_repeat_ngram_size: 3
+
+metrics:
+  text:
+    - rouge1
+    - rouge2
+    - rougeL
+    - distinct_1
+    - distinct_2
+    - prompt_validity_rate
+    - constraint_coverage
+    - latency_ms
+  image:
+    weights:
+      product_fidelity: 0.25
+      brand_consistency: 0.20
+      prompt_adherence: 0.20
+      composition_quality: 0.15
+      aesthetic_quality: 0.10
+      marketing_readiness: 0.10
+    marketing_readiness_threshold: 3.5
+
+baselines:
+  - id: "unenhanced_prompt"
+    name: "Raw Unenhanced Input"
+    description: "Raw user campaign string without ML expansion"
+  - id: "deterministic_template"
+    name: "Deterministic Template"
+    description: "Rule-based string template populating campaign arguments"
+  - id: "t5_enhanced"
+    name: "Custom T5-Small (GoVisual AI)"
+    description: "Fine-tuned 60.5M parameter T5 prompt generator"

@@ -76,6 +76,9 @@ backend/generated_images/*
 backend/generated_videos/*
 !backend/generated_videos/.gitkeep
 
+frontend/public/static/generated/*
+!frontend/public/static/generated/.gitkeep
+
 backend/debug_images/*
 !backend/debug_images/.gitkeep
 
@@ -86,6 +89,8 @@ debug_images/
 generated_images/
 **/debug_images/
 **/generated_images/
+recovered_photoshoot_images/
+backend/database/local_workspace_store.json
 
 # ------------------------------------------------------
 # Temporary & Scratch Files

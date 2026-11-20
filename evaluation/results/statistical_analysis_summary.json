@@ -1,0 +1,21 @@
+{
+  "t5_prompt_evaluation": {
+    "sample_size": 65,
+    "r1_t5": 32.55,
+    "r1_template": 18.78,
+    "r1_unenhanced": 21.09,
+    "r1_improvement_over_template_abs": 13.77,
+    "r1_improvement_over_template_pct": 73.32,
+    "rl_t5": 26.34,
+    "rl_improvement_over_template_abs": 8.7,
+    "latency_median_ms": 7541.72,
+    "latency_p95_ms": 8217.01
+  },
+  "image_quality_evaluation": {
+    "total_images": 7,
+    "usable_creative_rate": 85.71,
+    "mean_quality_score": 78.7,
+    "mean_product_fidelity": 3.74,
+    "mean_marketing_readiness": 3.91
+  }
+}

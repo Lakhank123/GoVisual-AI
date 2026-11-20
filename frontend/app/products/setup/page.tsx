@@ -26,32 +26,51 @@ export default function ProductsSetupPage() {
   const [editProductId, setEditProductId] = useState<string | null>(null);
 
   useEffect(() => {
+    let isMounted = true;
+    const controller = new AbortController();
+
     async function loadData() {
       try {
         const session = await getSafeSession();
+        if (!isMounted) return;
         if (!session) {
           router.push("/auth");
           return;
         }
         setUserId(session.user.id);
-        const fetchedProducts = await getProducts(session.access_token);
+        const fetchedProducts = await getProducts(session.access_token, controller.signal);
+        if (!isMounted) return;
         setProducts(fetchedProducts);
 
         const urls: Record<string, string> = {};
         for (const p of fetchedProducts) {
           if (p.image_url) {
-            const url = await getProductImageUrl(p.image_url);
+            const url = await getProductImageUrl(p.image_url, controller.signal);
             if (url) urls[p.id] = url;
           }
         }
-        setImageUrls(urls);
+        if (isMounted) {
+          setImageUrls(urls);
+          setError("");
+        }
       } catch (err: any) {
+        if (!isMounted || err?.name === "AbortError" || controller.signal.aborted) {
+          return;
+        }
+        console.warn("[ProductsSetupPage] Error loading products:", err);
         setError(err.message || "Failed to load products");
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     }
     loadData();
+
+    return () => {
+      isMounted = false;
+      controller.abort();
+    };
   }, [router]);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {

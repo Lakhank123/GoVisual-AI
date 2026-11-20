@@ -53,7 +53,7 @@ const STORAGE_KEY = 'govisual_onboarding_draft';
 
 export default function OnboardPage() {
   const router = useRouter();
-  const { session, authLoading, hasCompletedOnboarding, updateBrandProfileAndPersist, markBrandBookGenerated } = useDemoSession();
+  const { session, authLoading, profileLoading, hasCompletedOnboarding, updateBrandProfileAndPersist, markBrandBookGenerated } = useDemoSession();
 
   const [step, setStep] = useState<number>(1);
   const [businessName, setBusinessName] = useState<string>('');
@@ -80,20 +80,28 @@ export default function OnboardPage() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Redirect returning onboarded users (only if step < 6 so users currently completing Screen 6 are not prematurely booted)
+  // Redirect returning onboarded users
   useEffect(() => {
-    if (!authLoading && hasCompletedOnboarding && step < 6) {
-      router.replace('/dashboard');
+    if (!authLoading && !profileLoading) {
+      const bName = session.brandProfile?.businessName || session.workspace?.businessName;
+      const isComplete = hasCompletedOnboarding || (bName && bName.toLowerCase() !== 'my brand' && bName.toLowerCase() !== 'your shop');
+      if (isComplete && step < 6) {
+        router.replace('/dashboard');
+      }
     }
-  }, [authLoading, hasCompletedOnboarding, router, step]);
+  }, [authLoading, profileLoading, hasCompletedOnboarding, session.brandProfile, session.workspace, router, step]);
 
-  // Restore draft from localStorage
+  // Restore draft or redirect if already completed
   useEffect(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed: Partial<OnboardingData> = JSON.parse(saved);
-        if (parsed.step && parsed.step >= 1 && parsed.step <= 6) setStep(parsed.step);
+        if (parsed.step === 6) {
+          router.replace('/dashboard');
+          return;
+        }
+        if (parsed.step && parsed.step >= 1 && parsed.step < 6) setStep(parsed.step);
         if (parsed.businessName) setBusinessName(parsed.businessName);
         if (parsed.category) setCategory(parsed.category);
         if (parsed.city) setCity(parsed.city);
@@ -280,7 +288,7 @@ export default function OnboardPage() {
     }
   };
 
-  if (authLoading) {
+  if (authLoading || profileLoading) {
     return (
       <div className="min-h-screen bg-[#0B0907] flex items-center justify-center text-[#E8B66F] text-sm">
         Setting up your workspace...

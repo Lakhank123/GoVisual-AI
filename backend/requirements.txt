@@ -4,7 +4,6 @@ python-dotenv
 pillow
 transformers
 torch
-sentencepiece
 cloudinary
 httpx
 colorthief
@@ -14,8 +13,6 @@ imageio[ffmpeg]
 supabase
 razorpay
 rembg
-huggingface_hub
+huggingface_hub  
 openai
-beautifulsoup4
-cryptography
-aiofiles
+ 
