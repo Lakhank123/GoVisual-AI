@@ -67,7 +67,9 @@ app.add_exception_handler(GenerationEngineError, generation_engine_exception_han
 
 app.include_router(addon_router)
 app.include_router(onboard_router)
+app.include_router(onboard_router, prefix="/api")
 app.include_router(generation_router)
+app.include_router(generation_router, prefix="/api")
 app.include_router(engine_router)
 app.include_router(product_router)
 
@@ -166,11 +168,13 @@ def root():
 
 
 @app.get("/health")
+@app.get("/api/health")
 def health():
     return {"status": "ok", "model_loaded": prompt_svc.is_loaded(), "image_provider": image_svc.provider_name}
 
 
 @app.get("/brand-lookup")
+@app.get("/api/brand-lookup")
 async def brand_lookup(q: str, city: str = ""):
     """
     Step 1: Search for business by name + city.
@@ -185,6 +189,7 @@ async def brand_lookup(q: str, city: str = ""):
 
 
 @app.get("/brand-profile/{place_id}")
+@app.get("/api/brand-profile/{place_id}")
 async def brand_profile(place_id: str):
     """
     Step 2: Given a confirmed place_id, extract full brand profile.
@@ -199,6 +204,7 @@ async def brand_profile(place_id: str):
 
 
 @app.post("/generate-samples")
+@app.post("/api/generate-samples")
 async def generate_samples(
     place_id: str = Form(...),
     category: str = Form(...),

@@ -103,7 +103,7 @@ export default function ContentStudioPage() {
 
   const handleSaveToLibrary = async (img: any, idx: number) => {
     try {
-      const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+      const apiBase = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? "" : "http://127.0.0.1:8000");
       const fullUrl = img.url?.startsWith("http") ? img.url : `${apiBase}${img.url?.startsWith("/") ? "" : "/"}${img.url}`;
       const supabaseSession = await getSafeSession();
       const token = supabaseSession?.access_token;
@@ -431,7 +431,7 @@ export default function ContentStudioPage() {
       const controller = new AbortController();
       const timeout = window.setTimeout(() => controller.abort(), 180000);
 
-      const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+      const apiBase = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? "" : "http://127.0.0.1:8000");
       const res = await fetch(`${apiBase}/generate`, {
         method: "POST",
         headers: {

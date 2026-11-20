@@ -38,7 +38,7 @@ export default function BrandBrainPreview() {
         inferredProfile, products, audienceSegments
       };
 
-      const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+      const apiBase = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || (typeof window !== 'undefined' ? '' : 'http://127.0.0.1:8000');
       const authSession = await getSafeSession();
       const token = authSession?.access_token;
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };

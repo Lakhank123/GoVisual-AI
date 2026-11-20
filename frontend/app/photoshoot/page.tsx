@@ -323,7 +323,7 @@ export default function PhotoshootPage() {
     setStep("generating");
 
     try {
-      const BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+      const BASE = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? "" : "http://127.0.0.1:8000");
       const formData = new FormData();
       formData.append("productImage", productImage);
       formData.append("productName", creativeAnswers.product || productName || "Product");
@@ -410,7 +410,7 @@ export default function PhotoshootPage() {
     setCustomModelError(null);
 
     try {
-      const BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+      const BASE = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? "" : "http://127.0.0.1:8000");
       const formData = new FormData();
       formData.append("name", customName.trim());
       formData.append("gender", customGender);
@@ -472,7 +472,7 @@ export default function PhotoshootPage() {
     const timeoutId = setTimeout(() => controller.abort(), 15000);
 
     try {
-      const BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+      const BASE = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? "" : "http://127.0.0.1:8000");
       const authSession = await getSafeSession();
       const token = authSession?.access_token;
 

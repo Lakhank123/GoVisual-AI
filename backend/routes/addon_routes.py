@@ -1090,6 +1090,7 @@ async def create_minisite(data: MinisiteData):
 
 
 @router.get("/s/{slug}")
+@router.get("/api/s/{slug}")
 async def serve_minisite(slug: str):
     """Serve a website configuration by slug with strict path traversal checks."""
     clean_slug = re.sub(r"[^a-z0-9\-]", "", slug.lower().strip())[:64]

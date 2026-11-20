@@ -22,7 +22,7 @@ export default function PromptInspector() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const backendUrl = "http://localhost:8000";
+  const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? "" : "http://127.0.0.1:8000");
 
   const handleProcess = async () => {
     setLoading(true);

@@ -37,6 +37,8 @@ class V2GenerateResponse(BaseModel):
 
 @router.post("/generate", response_model=V2GenerateResponse)
 @router.post("/generate-v2", response_model=V2GenerateResponse)
+@router.post("/api/generate", response_model=V2GenerateResponse)
+@router.post("/api/generate-v2", response_model=V2GenerateResponse)
 async def generate_v2(
     product: str = Form(...),
     price: str = Form(...),

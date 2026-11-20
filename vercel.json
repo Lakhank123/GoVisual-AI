@@ -1,0 +1,90 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "backend": {
+      "root": "backend",
+      "framework": "fastapi",
+      "entrypoint": "main:app"
+    },
+    "frontend": {
+      "root": "frontend",
+      "framework": "nextjs",
+      "bindings": [
+        {
+          "type": "service",
+          "service": "backend",
+          "format": "url",
+          "env": "BACKEND_URL"
+        }
+      ]
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": {
+        "service": "backend"
+      }
+    },
+    {
+      "source": "/brand/onboard/(.*)",
+      "destination": {
+        "service": "backend"
+      }
+    },
+    {
+      "source": "/brand-lookup",
+      "destination": {
+        "service": "backend"
+      }
+    },
+    {
+      "source": "/brand-profile/(.*)",
+      "destination": {
+        "service": "backend"
+      }
+    },
+    {
+      "source": "/generate",
+      "destination": {
+        "service": "backend"
+      }
+    },
+    {
+      "source": "/generate-v2",
+      "destination": {
+        "service": "backend"
+      }
+    },
+    {
+      "source": "/generate-samples",
+      "destination": {
+        "service": "backend"
+      }
+    },
+    {
+      "source": "/generation/(.*)",
+      "destination": {
+        "service": "backend"
+      }
+    },
+    {
+      "source": "/s/(.*)",
+      "destination": {
+        "service": "backend"
+      }
+    },
+    {
+      "source": "/health",
+      "destination": {
+        "service": "backend"
+      }
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "frontend"
+      }
+    }
+  ]
+}
