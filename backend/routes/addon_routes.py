@@ -276,16 +276,36 @@ async def generate_photoshoot(
             if r["success"]:
                 fn   = f"shoot_{uuid.uuid4().hex}.jpg"
                 img_bytes = base64.b64decode(r["image_b64"])
-                with open(os.path.join(backend_gen_dir, fn), "wb") as f:
-                    f.write(img_bytes)
-                try:
-                    with open(os.path.join(frontend_gen_dir, fn), "wb") as f:
-                        f.write(img_bytes)
-                except Exception as fe:
-                    logger.debug("[Photoshoot] Notice copying to frontend static: %s", fe)
+                image_url = None
+
+                # Production: Upload to Cloudinary CDN for persistent, serverless-safe public HTTPS URL
+                if storage_svc.is_cloudinary_configured():
+                    try:
+                        image_url = storage_svc.upload_public_jpeg(
+                            img_bytes, folder="govisual_photoshoots", filename=fn
+                        )
+                    except Exception as ce:
+                        logger.warning("[Photoshoot] Cloudinary upload notice: %s", ce)
+                        image_url = None
+
+                # Local dev fallback: save to local static dir if Cloudinary not configured
+                if not image_url:
+                    try:
+                        with open(os.path.join(backend_gen_dir, fn), "wb") as f:
+                            f.write(img_bytes)
+                        try:
+                            with open(os.path.join(frontend_gen_dir, fn), "wb") as f:
+                                f.write(img_bytes)
+                        except Exception as fe:
+                            logger.debug("[Photoshoot] Notice copying to frontend static: %s", fe)
+                        image_url = f"/static/generated/{fn}"
+                    except Exception as le:
+                        logger.error("[Photoshoot] Local storage error: %s", le)
+                        image_url = f"data:image/jpeg;base64,{r['image_b64']}"
+
                 output.append({
                     "label":    r["label"],
-                    "url":      f"/static/generated/{fn}",
+                    "url":      image_url,
                     "success":  True,
                 })
             else:
@@ -407,6 +427,8 @@ class SavePhotoshootAssetRequest(BaseModel):
 
 @router.post("/api/photoshoot/save-asset")
 @router.post("/api/photoshoot/save-to-library")
+@router.post("/api/creative/save-to-library")
+@router.post("/api/library/save-asset")
 async def save_photoshoot_asset(
     req: SavePhotoshootAssetRequest,
     user: dict = Depends(get_current_user),
@@ -540,6 +562,21 @@ async def save_photoshoot_asset(
         client = create_client(supabase_url, supabase_key)
         client.options.headers["Authorization"] = f"Bearer {token}"
 
+        from database.local_workspace_store import LocalWorkspaceStore
+        local_asset_record = {
+            "id": str(uuid.uuid4()),
+            "type": "creative" if (req.mode == "creative") else "photoshoot",
+            "url": stored_url,
+            "metadata": {
+                "title": f"{req.productName} — {req.shotLabel}",
+                "mode": req.mode,
+                "label": req.shotLabel,
+                "productName": req.productName,
+            },
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+        }
+        LocalWorkspaceStore.save_library_asset(target_brand_id, local_asset_record, email=getattr(user, "email", None))
+
         # Ensure brand_core_identity row exists to satisfy foreign key constraint
         try:
             client.table("brand_core_identity").upsert({
@@ -633,12 +670,13 @@ async def save_photoshoot_asset(
 
 
 @router.get("/api/photoshoot/library-assets")
+@router.get("/api/library/assets")
 async def get_photoshoot_library_assets(
     user: dict = Depends(get_current_user),
     credentials: HTTPAuthorizationCredentials = Security(security_scheme),
 ):
     """
-    Retrieves all persisted photoshoot assets for the authenticated user from brand_asset_library.
+    Retrieves all persisted photoshoot and creative assets for the authenticated user from brand_asset_library.
     Enforces user authentication and tenant isolation.
     """
     auth_user_id = str(user.id if hasattr(user, "id") else (user.get("id") if isinstance(user, dict) else ""))
@@ -656,7 +694,7 @@ async def get_photoshoot_library_assets(
         client = create_client(supabase_url, supabase_key)
         client.options.headers["Authorization"] = f"Bearer {token}"
 
-        # Fetch product_image assets owned by this user
+        # Fetch product_image and creative assets owned by this user
         try:
             resp = (
                 client.table("brand_asset_library")
@@ -678,27 +716,40 @@ async def get_photoshoot_library_assets(
         assets = []
         for row in resp.data or []:
             tags = row.get("tags") or {}
-            # Include photoshoot assets
-            if tags.get("mode") in ("model", "product_only", "lifestyle") or tags.get("shot_label") or row.get("asset_type") == "product_image":
-                assets.append({
-                    "id": str(row.get("id")),
-                    "type": "photoshoot",
-                    "url": row.get("asset_url"),
-                    "metadata": {
-                        "title": f"{tags.get('product_name', 'Photoshoot')} — {tags.get('shot_label', 'Shot')}",
-                        "format": "image/jpeg",
-                        "mode": tags.get("mode") or "model",
-                        "caption": tags.get("caption"),
-                        "hashtags": tags.get("hashtags"),
-                        "tags": tags,
-                    },
-                    "createdAt": row.get("created_at"),
-                })
+            mode = tags.get("mode") or ""
+            is_creative = mode == "creative" or tags.get("type") == "creative" or row.get("asset_type") == "creative"
+            asset_type = "creative" if is_creative else "photoshoot"
+            title = tags.get("title") or (
+                f"{tags.get('product_name', 'Creative')} ({tags.get('strategy_name') or tags.get('shot_label', 'Creative')})"
+                if is_creative
+                else f"{tags.get('product_name', 'Photoshoot')} — {tags.get('shot_label', 'Shot')}"
+            )
+            assets.append({
+                "id": str(row.get("id")),
+                "type": asset_type,
+                "url": row.get("asset_url"),
+                "metadata": {
+                    "title": title,
+                    "format": "image/jpeg",
+                    "mode": mode or asset_type,
+                    "caption": tags.get("caption"),
+                    "hashtags": tags.get("hashtags"),
+                    "prompt": tags.get("prompt"),
+                    "tags": tags,
+                },
+                "createdAt": row.get("created_at"),
+            })
+
+        if not assets:
+            from database.local_workspace_store import LocalWorkspaceStore
+            assets = LocalWorkspaceStore.get_library_assets(auth_user_id) or (LocalWorkspaceStore.get_library_assets(getattr(user, "email", None)) if getattr(user, "email", None) else [])
 
         return JSONResponse(content={"success": True, "assets": assets})
     except Exception as e:
         logger.warning("[Photoshoot] Error fetching library assets: %s", e)
-        return JSONResponse(content={"success": True, "assets": []})
+        from database.local_workspace_store import LocalWorkspaceStore
+        fallback_assets = LocalWorkspaceStore.get_library_assets(auth_user_id) or (LocalWorkspaceStore.get_library_assets(getattr(user, "email", None)) if getattr(user, "email", None) else [])
+        return JSONResponse(content={"success": True, "assets": fallback_assets})
 
 
 

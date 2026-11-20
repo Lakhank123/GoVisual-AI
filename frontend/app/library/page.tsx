@@ -57,11 +57,16 @@ export default function LibraryPage() {
                 if (filter === "brand") return a.type === "brand_book" || a.type === "website_asset";
                 return true;
               })
-              .map((asset) => (
+              .map((asset) => {
+                const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+                const displayUrl = asset.url && !asset.url.startsWith("http") && !asset.url.startsWith("data:")
+                  ? `${apiBase}${asset.url.startsWith("/") ? "" : "/"}${asset.url}`
+                  : asset.url;
+                return (
                 <div key={asset.id} style={{ background: "#21170F", border: "1px solid #3B2B1E", borderRadius: 12, overflow: "hidden", display: "flex", flexDirection: "column" }}>
                   <div style={{ height: 200, background: "linear-gradient(135deg, #14100D, #2B1E14)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 40, position: "relative" }}>
-                    {asset.url && (asset.type === "creative" || asset.type === "photoshoot" || asset.metadata?.format === "image/jpeg" || asset.url.endsWith(".jpg") || asset.url.endsWith(".png") || asset.url.endsWith(".webp") || asset.url.includes("/static/generated/")) ? (
-                      <img src={asset.url} alt={asset.metadata?.title || 'Asset'} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    {displayUrl && (asset.type === "creative" || asset.type === "photoshoot" || asset.metadata?.format === "image/jpeg" || displayUrl.endsWith(".jpg") || displayUrl.endsWith(".png") || displayUrl.endsWith(".webp") || displayUrl.includes("/static/generated/")) ? (
+                      <img src={displayUrl} alt={asset.metadata?.title || 'Asset'} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                     ) : (
                       asset.type === "video" ? "🎬" : asset.type === "brand_book" ? "📘" : "🎨"
                     )}
@@ -107,7 +112,8 @@ export default function LibraryPage() {
                     )}
                   </div>
                 </div>
-              ))
+              );
+            })
             }
           </div>
         )}

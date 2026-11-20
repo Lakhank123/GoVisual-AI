@@ -1,0 +1,27 @@
+# GOVISUAL AI — HUMAN EVALUATION PROTOCOL & SCORING RUBRIC
+# Scale: 1 (Unusable / Severe Defect) to 5 (Flawless / Commercial Production Quality)
+#
+# Rubric Definitions:
+# 1. Product Fidelity: Preservation of actual product shape, geometry, material, color, and key identifying attributes.
+#    [1=Completely distorted/unrecognizable; 3=Recognizable but proportions/details warped; 5=Photorealistic match to reference product]
+# 2. Brand Consistency: Representation of brand identity, colors, typography, tone, and visual language.
+#    [1=Completely violates brand identity/colors; 3=Roughly matches palette but generic feel; 5=Flawless brand cohesion]
+# 3. Prompt Adherence: Conformance with specified background, lighting, mood, occasion, and scene requirements.
+#    [1=Ignored all scene directives; 3=Partially followed scene requirements; 5=Exact faithful execution of creative brief]
+# 4. Composition Quality: Product prominence, visual hierarchy, framing, margin spacing, and balance.
+#    [1=Awkward cropping/occluded product; 3=Acceptable framing with minor crowding; 5=Heroic commercial composition]
+# 5. Aesthetic Quality: Lighting realism, reflections, shadow accuracy, color grading, photorealism.
+#    [1=Cartoonish/blurry/artifact-ridden; 3=Standard synthetic image; 5=Editorial agency grade visual polish]
+# 6. Text & Logo Correctness: Legibility, spelling, absence of hallucinated gibberish or duplicated logos.
+#    [1=Severe gibberish/corrupt text/logo; 3=Readable but minor typographic artifact; 5=Pristine crisp typography/logo]
+# 7. Marketing Readiness: Practical usability by a merchant in live paid ad campaigns or ecommerce listings.
+#    [1=Completely unusable, would damage brand; 3=Usable with manual editing; 5=Ready to publish immediately]
+#
+evaluation_id,case_id,product_name,category,variant_label,workflow_code,image_path,reviewer_id,product_fidelity,brand_consistency,prompt_adherence,composition_quality,aesthetic_quality,text_and_logo_correctness,marketing_readiness,is_usable_creative,primary_defect,notes
+EVAL-001,P001,Men's Half Sleeve T-Shirt,clothing,Variant A,WF-1,recovered_photoshoot_images/1_Lifestyle_Close-Up.png,,,,, ,,,,,,,
+EVAL-002,P001,Men's Half Sleeve T-Shirt,clothing,Variant B,WF-1,recovered_photoshoot_images/2_Hero_Showcase.png,,,,, ,,,,,,,
+EVAL-003,P001,Men's Half Sleeve T-Shirt,clothing,Variant C,WF-1,recovered_photoshoot_images/3_Macro_Detail.png,,,,, ,,,,,,,
+EVAL-004,P002,Coca-Cola Original Taste,beverage,Variant A,WF-2A,research/phase1/hf_img2img_tests/flux_kontext_test.png,,,,, ,,,,,,,
+EVAL-005,P002,Coca-Cola Original Taste,beverage,Variant B,WF-2B,research/phase1/hf_img2img_tests/qwen_image_edit_test.png,,,,, ,,,,,,,
+EVAL-006,P002,Coca-Cola Original Taste,beverage,Variant C,WF-2C,research/phase1/hf_img2img_tests/flux_klein_4b_test.png,,,,, ,,,,,,,
+EVAL-007,P003,Automotive Engine Oil,automotive,Variant A,WF-0,research/phase0/baseline/single_test/P001/C01/final_creative.png,,,,, ,,,,,,,

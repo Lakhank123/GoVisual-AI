@@ -29,14 +29,14 @@ class ProductUpdate(BaseModel):
 
 class ProductResponse(BaseModel):
     id: str
-    business_id: str
+    business_id: Optional[str] = None
     name: str
-    description: Optional[str]
-    price_positioning: Optional[str]
-    category: Optional[str]
-    image_url: Optional[str]
-    created_at: Optional[str]
-    updated_at: Optional[str]
+    description: Optional[str] = None
+    price_positioning: Optional[str] = None
+    category: Optional[str] = None
+    image_url: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
 
 def get_token(credentials: HTTPAuthorizationCredentials = Security(security)):
     """Extracts the raw JWT token from the Authorization header."""

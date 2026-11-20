@@ -2,9 +2,12 @@ import json
 import os
 import uuid
 import logging
-from fastapi import APIRouter, File, Form, UploadFile, HTTPException, Depends
+from fastapi import APIRouter, File, Form, UploadFile, HTTPException, Depends, Security
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel
+
+security_scheme = HTTPBearer(auto_error=False)
 
 from services.auth import get_current_user
 from services.product_understanding.service import ProductUnderstandingService
@@ -60,19 +63,26 @@ async def generate_v2(
     logo_image: Optional[UploadFile] = File(None),
     logo_position: str = Form("top-right"),
     reference_image_url: Optional[str] = Form(None),
+    auto_correction: Optional[str] = Form(None),
+    image_intent: Optional[str] = Form(None),
+    logo_variants: Optional[str] = Form(None),
     user: dict = Depends(get_current_user),
+    credentials: Optional[HTTPAuthorizationCredentials] = Security(security_scheme),
 ):
     logger.info("[V2_PIPELINE_ACTIVE] Request received for /generate")
 
     user_id = str(user.id if hasattr(user, "id") else (user.get("id") if isinstance(user, dict) else user))
     credit_guard = get_credit_guard()
-    critic_requested = os.getenv("ENABLE_CRITIC", "false").strip().lower() == "true"
+    
+    is_auto_correction_requested = False
+    if auto_correction is not None:
+        is_auto_correction_requested = str(auto_correction).strip().lower() in ("true", "1", "yes")
 
     # Enforce atomic credit check, run limits, and auto-correction gate
     credit_guard.verify_generation_eligibility(
         user_id=user_id,
         requested_images_count=3,
-        auto_correction_requested=critic_requested
+        auto_correction_requested=is_auto_correction_requested
     )
 
     # 1. Read & Validate Authoritative Product Reference Image
@@ -313,16 +323,32 @@ async def generate_v2(
             from services.self_correction.correction_engine import CorrectionEngine
             critic_provider = GroqCriticProvider()
             critic = GoVisualCritic(critic_provider)
-            sc_engine = CorrectionEngine(critic, OpenAIRegenerationProvider())
             
-            logger.info("[V2_PIPELINE] [SELF_CORRECTION] Running Real Critic & Self-Correction loop")
-            final_ranking = await sc_engine.run_correction_loop(
-                initial_candidates=eval_candidates,
-                reference_image_bytes=image_bytes,
-                product_understanding=pu_result.analysis.model_dump(),
-                brand_dna=brand_dna_dict,
-                marketing_requirement=marketing_req
-            )
+            # Self-correction repair loop is only executed if the user's plan permits it
+            subscription = credit_guard.billing_service.get_user_subscription(user_id)
+            tier_allows_correction = getattr(subscription.active_plan, "auto_correction_allowed", False)
+            should_run_auto_correction = tier_allows_correction and (is_auto_correction_requested or critic_enabled)
+
+            if should_run_auto_correction:
+                sc_engine = CorrectionEngine(critic, OpenAIRegenerationProvider())
+                logger.info("[V2_PIPELINE] [SELF_CORRECTION] Running Real Critic & Self-Correction loop")
+                final_ranking = await sc_engine.run_correction_loop(
+                    initial_candidates=eval_candidates,
+                    reference_image_bytes=image_bytes,
+                    product_understanding=pu_result.analysis.model_dump(),
+                    brand_dna=brand_dna_dict,
+                    marketing_requirement=marketing_req
+                )
+            else:
+                logger.info("[V2_PIPELINE] Running Critic Evaluation & Ranking (evaluation only, auto-correction locked on current plan)")
+                final_ranking = await critic.evaluate_batch(
+                    candidates=eval_candidates,
+                    reference_image_bytes=image_bytes,
+                    product_understanding=pu_result.analysis.model_dump(),
+                    brand_dna=brand_dna_dict,
+                    marketing_requirement=marketing_req
+                )
+                final_ranking["candidates"] = eval_candidates
             
             winner_id = final_ranking.get("winner_candidate_id")
             for res in final_ranking.get("sorted_results", []):
@@ -419,6 +445,43 @@ async def generate_v2(
         purpose=purpose,
         language=language,
     )
+
+    # 9. Auto-persist generated creative candidates to brand_asset_library
+    try:
+        from supabase import create_client
+        supabase_url = os.environ.get("SUPABASE_URL")
+        supabase_key = os.environ.get("SUPABASE_ANON_KEY")
+        token = credentials.credentials if credentials else None
+        
+        if supabase_url and supabase_key and token and user_id:
+            db_client = create_client(supabase_url, supabase_key)
+            db_client.options.headers["Authorization"] = f"Bearer {token}"
+            
+            for gen_cand in output_candidates:
+                cand_url = gen_cand.get("url")
+                if not cand_url:
+                    continue
+                try:
+                    db_client.table("brand_asset_library").insert({
+                        "business_id": user_id,
+                        "asset_type": "product_image",
+                        "asset_url": cand_url,
+                        "tags": {
+                            "product_name": product,
+                            "shot_label": gen_cand.get("strategy_name") or "Creative",
+                            "strategy_name": gen_cand.get("strategy_name") or "Creative",
+                            "mode": "creative",
+                            "caption": caption,
+                            "prompt": gen_cand.get("prompt_used"),
+                            "is_recommended": gen_cand.get("is_recommended", False),
+                        },
+                        "source": "generated",
+                    }).execute()
+                except Exception as ins_err:
+                    logger.debug("[V2] Auto-save candidate row warning: %s", ins_err)
+            logger.info("[V2] Successfully auto-persisted creative candidates to brand_asset_library.")
+    except Exception as save_err:
+        logger.warning("[V2] Auto-save to brand_asset_library skipped: %s", save_err)
 
     return V2GenerateResponse(
         success=True,

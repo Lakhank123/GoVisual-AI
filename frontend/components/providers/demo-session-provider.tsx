@@ -12,6 +12,7 @@ import {
 import { getProducts, getProductImageUrl, getGeneratedAssets } from "@/lib/productApi";
 
 export type UserInfo = {
+  id?: string;
   name: string;
   email: string;
 };
@@ -130,10 +131,16 @@ export function DemoSessionProvider({ children }: { children: React.ReactNode })
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
 
-  const loadUserProducts = async (token?: string) => {
+  const activeAbortRef = React.useRef<AbortController | null>(null);
+  const lastLoadedUserIdRef = React.useRef<string | null>(null);
+
+  const loadUserProducts = async (token?: string, signal?: AbortSignal) => {
     try {
-      const authSession = await getSafeSession();
-      const resolvedToken = token || authSession?.access_token;
+      let resolvedToken = token;
+      if (!resolvedToken) {
+        const authSession = await getSafeSession();
+        resolvedToken = authSession?.access_token;
+      }
 
       // If user is unauthenticated (guest / onboarding step), products catalog is empty
       if (!resolvedToken) {
@@ -141,12 +148,15 @@ export function DemoSessionProvider({ children }: { children: React.ReactNode })
         return;
       }
 
-      const fetched = await getProducts(resolvedToken);
+      const fetched = await getProducts(resolvedToken, signal);
+      if (signal?.aborted) return;
+
       const mapped: ProductService[] = [];
       for (const p of fetched) {
+        if (signal?.aborted) return;
         let signedUrl = undefined;
         if (p.image_url) {
-          signedUrl = (await getProductImageUrl(p.image_url)) || undefined;
+          signedUrl = (await getProductImageUrl(p.image_url, signal)) || undefined;
         }
         mapped.push({
           id: p.id,
@@ -157,8 +167,11 @@ export function DemoSessionProvider({ children }: { children: React.ReactNode })
           imageUrl: signedUrl,
         });
       }
-      setSession((s) => ({ ...s, products: mapped }));
+      if (!signal?.aborted) {
+        setSession((s) => ({ ...s, products: mapped }));
+      }
     } catch (e: any) {
+      if (signal?.aborted) return;
       if (e?.isAuthError || e?.status === 401 || e?.message?.includes("401")) {
         console.warn("[DemoSession] User unauthenticated or token expired, products empty:", e?.message);
         setSession((s) => ({ ...s, products: [] }));
@@ -168,10 +181,26 @@ export function DemoSessionProvider({ children }: { children: React.ReactNode })
     }
   };
 
-  const loadUserLibrary = async () => {
+  const loadUserLibrary = async (explicitUserId?: string, explicitToken?: string, signal?: AbortSignal) => {
     try {
       const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
-      const sessions = await getGeneratedAssets();
+      let userId = explicitUserId;
+      let token = explicitToken;
+
+      if (!userId || !token) {
+        const authSession = await getSafeSession();
+        userId = userId || authSession?.user?.id;
+        token = token || authSession?.access_token;
+      }
+
+      if (!userId) {
+        setSession((s) => ({ ...s, library: [] }));
+        return;
+      }
+
+      const sessions = await getGeneratedAssets(userId, signal);
+      if (signal?.aborted) return;
+
       const libraryAssets: LibraryAsset[] = [];
 
       for (const sess of sessions) {
@@ -203,12 +232,11 @@ export function DemoSessionProvider({ children }: { children: React.ReactNode })
       }
 
       // Also fetch authenticated persisted photoshoot assets from brand_asset_library
-      try {
-        const authSession = await getSafeSession();
-        const token = authSession?.access_token;
-        if (token) {
+      if (token && !signal?.aborted) {
+        try {
           const photoRes = await fetch(`${apiBase}/api/photoshoot/library-assets`, {
             headers: { Authorization: `Bearer ${token}` },
+            signal,
           });
           if (photoRes.ok) {
             const photoJson = await photoRes.json();
@@ -218,9 +246,12 @@ export function DemoSessionProvider({ children }: { children: React.ReactNode })
                 if (assetUrl && !assetUrl.startsWith("http") && !assetUrl.startsWith("data:")) {
                   assetUrl = `${apiBase}${assetUrl.startsWith("/") ? "" : "/"}${assetUrl}`;
                 }
+                const inferredType = (pa.type === "creative" || pa.metadata?.mode === "creative" || pa.metadata?.tags?.mode === "creative")
+                  ? "creative"
+                  : (pa.type || "photoshoot");
                 libraryAssets.push({
                   id: pa.id,
-                  type: "photoshoot",
+                  type: inferredType,
                   url: assetUrl,
                   metadata: pa.metadata,
                   createdAt: pa.createdAt,
@@ -228,62 +259,159 @@ export function DemoSessionProvider({ children }: { children: React.ReactNode })
               }
             }
           }
+        } catch (pe: any) {
+          if (pe?.name !== 'AbortError') {
+            console.warn("Failed loading photoshoot library assets:", pe);
+          }
         }
-      } catch (pe) {
-        console.warn("Failed loading photoshoot library assets:", pe);
       }
 
-      setSession((s) => ({ ...s, library: libraryAssets }));
-    } catch (e) {
-      console.error("Failed to load library assets:", e);
+      if (!signal?.aborted) {
+        setSession((s) => {
+          const remoteUrls = new Set(libraryAssets.map(a => a.url));
+          // Preserve any locally added/generated items that haven't shown up in the query yet
+          const retainedLocal = (s.library || []).filter(local => local.url && !remoteUrls.has(local.url));
+          return { ...s, library: [...retainedLocal, ...libraryAssets] };
+        });
+      }
+    } catch (e: any) {
+      if (e?.name !== 'AbortError') {
+        console.error("Failed to load library assets:", e);
+      }
     }
   };
 
-  const loadUserProfile = async (userId: string) => {
+  const loadUserProfile = async (userId: string, signal?: AbortSignal) => {
     setProfileLoading(true);
     setProfileError(null);
     try {
       const [profile, brand] = await Promise.all([
-        getProfile(userId),
-        getBrandCoreIdentity(userId),
+        getProfile(userId, signal),
+        getBrandCoreIdentity(userId, signal),
       ]);
 
+      if (signal?.aborted) return;
+
+      let resolvedBrand = brand;
+      let resolvedProfile = profile;
+
+      // Fallback: If DB brand has placeholder name or is missing, check Backend API /brand/onboard/identity
+      if (
+        (!resolvedBrand || isPlaceholderBrandName(resolvedBrand?.brand_name)) &&
+        (!resolvedProfile || isPlaceholderBrandName(resolvedProfile?.business_name))
+      ) {
+        try {
+          const authSession = await getSafeSession();
+          const email = authSession?.user?.email;
+          const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+          const syncUrl = email
+            ? `${apiBase}/brand/onboard/sync?email=${encodeURIComponent(email)}&user_id=${userId}`
+            : `${apiBase}/brand/onboard/sync?user_id=${userId}`;
+          const bRes = await fetch(syncUrl, {
+            headers: authSession?.access_token ? { Authorization: `Bearer ${authSession.access_token}` } : {},
+            signal,
+          });
+          if (bRes.ok) {
+            const bJson = await bRes.json();
+            const core = bJson?.brand?.core;
+            if (core?.brand_name && !isPlaceholderBrandName(core.brand_name)) {
+              resolvedBrand = {
+                business_id: userId,
+                brand_name: core.brand_name,
+                category: core.category,
+                city: core.city,
+                logo_url: core.logo_url,
+                primary_color: bJson.brand?.visual_dna?.primary_color,
+                secondary_color: bJson.brand?.visual_dna?.secondary_color,
+                brand_tone: core.brand_tone,
+                tagline: core.tagline,
+                brand_brief: core.brand_brief,
+                website_url: core.website_url,
+                instagram_handle: core.instagram_handle,
+                onboarding_complete: true,
+              };
+            }
+          }
+        } catch (apiErr) {
+          console.warn("[DemoSession] Fallback backend identity notice:", apiErr);
+        }
+
+        // Keyed local backup check (survives logout & browser restarts)
+        if ((!resolvedBrand || isPlaceholderBrandName(resolvedBrand?.brand_name)) && typeof window !== 'undefined') {
+          try {
+            const authSession = await getSafeSession();
+            const email = authSession?.user?.email;
+            const candidateKeys = [
+              email ? `govisual_user_data_${email}` : null,
+              email ? `gv_backup_${email}` : null,
+              `govisual_user_data_${userId}`,
+              `gv_backup_${userId}`,
+              'govisual_user_data_latest',
+            ].filter(Boolean) as string[];
+
+            for (const key of candidateKeys) {
+              const bRaw = localStorage.getItem(key);
+              if (bRaw) {
+                const bData = JSON.parse(bRaw);
+                const bName = bData?.businessName || bData?.brand_name;
+                if (bName && !isPlaceholderBrandName(bName)) {
+                  resolvedBrand = {
+                    business_id: userId,
+                    brand_name: bName,
+                    category: bData.category,
+                    city: bData.city,
+                    logo_url: bData.logoUrl || bData.logo_url,
+                    primary_color: bData.primaryColor || bData.primary_color,
+                    secondary_color: bData.secondaryColor || bData.secondary_color,
+                    brand_brief: bData.brandSummary || bData.brand_brief,
+                    website_url: bData.website || bData.website_url,
+                    instagram_handle: bData.instagram || bData.instagram_handle,
+                    onboarding_complete: true,
+                  };
+                  break;
+                }
+              }
+            }
+          } catch {}
+        }
+      }
+
       const hasValidBrand = Boolean(
-        brand?.onboarding_complete ||
-        !isPlaceholderBrandName(brand?.brand_name) ||
-        !isPlaceholderBrandName(profile?.business_name)
+        resolvedBrand?.onboarding_complete ||
+        !isPlaceholderBrandName(resolvedBrand?.brand_name) ||
+        !isPlaceholderBrandName(resolvedProfile?.business_name)
       );
 
       const resolvedBusinessName =
-        (brand?.brand_name && !isPlaceholderBrandName(brand.brand_name) ? brand.brand_name : null) ||
-        (profile?.business_name && !isPlaceholderBrandName(profile.business_name) ? profile.business_name : null) ||
-        brand?.brand_name ||
-        profile?.business_name ||
+        (resolvedBrand?.brand_name && !isPlaceholderBrandName(resolvedBrand.brand_name) ? resolvedBrand.brand_name : null) ||
+        (resolvedProfile?.business_name && !isPlaceholderBrandName(resolvedProfile.business_name) ? resolvedProfile.business_name : null) ||
+        resolvedBrand?.brand_name ||
+        resolvedProfile?.business_name ||
         "";
 
-      if (brand || profile) {
+      if (resolvedBrand || resolvedProfile) {
         setSession((s) => ({
           ...s,
           workspace: {
             businessName: resolvedBusinessName || s.workspace?.businessName || "",
-            category: brand?.category || s.workspace?.category || "",
-            city: brand?.city || s.workspace?.city || "",
+            category: resolvedBrand?.category || s.workspace?.category || "",
+            city: resolvedBrand?.city || s.workspace?.city || "",
           },
           brandProfile: {
             businessName: resolvedBusinessName || s.brandProfile?.businessName,
-            logoUrl: brand?.logo_url || s.brandProfile?.logoUrl || undefined,
-            primaryColor: brand?.primary_color || s.brandProfile?.primaryColor || undefined,
-            secondaryColor: brand?.secondary_color || s.brandProfile?.secondaryColor || undefined,
-            typography: brand?.brand_tone || s.brandProfile?.typography || undefined,
-            targetAudience: brand?.tagline || s.brandProfile?.targetAudience || undefined,
-            brandPersonality: Array.isArray(brand?.brand_personality_tags)
-              ? brand.brand_personality_tags.join(", ")
-              : (brand?.brand_tone || s.brandProfile?.brandPersonality || undefined),
-            brandSummary: brand?.brand_brief || s.brandProfile?.brandSummary || undefined,
-            website: brand?.website_url || s.brandProfile?.website || undefined,
-            instagram: brand?.instagram_handle || s.brandProfile?.instagram || undefined,
-            city: brand?.city || s.brandProfile?.city || undefined,
-            category: brand?.category || s.brandProfile?.category || undefined,
+            logoUrl: resolvedBrand?.logo_url || s.brandProfile?.logoUrl || undefined,
+            primaryColor: resolvedBrand?.primary_color || s.brandProfile?.primaryColor || undefined,
+            secondaryColor: resolvedBrand?.secondary_color || s.brandProfile?.secondaryColor || undefined,
+            typography: resolvedBrand?.brand_tone || s.brandProfile?.typography || undefined,
+            targetAudience: resolvedBrand?.tagline || s.brandProfile?.targetAudience || undefined,
+            brandPersonality: Array.isArray(resolvedBrand?.brand_personality_tags)
+              ? resolvedBrand.brand_personality_tags.join(", ")
+              : (resolvedBrand?.brand_tone || s.brandProfile?.brandPersonality || undefined),
+            brandSummary: resolvedBrand?.brand_brief || s.brandProfile?.brandSummary || undefined,
+            website: resolvedBrand?.website_url || s.brandProfile?.website || undefined,
+            instagram: resolvedBrand?.instagram_handle || s.brandProfile?.instagram || undefined,
+            city: resolvedBrand?.city || s.brandProfile?.city || undefined,
+            category: resolvedBrand?.category || s.brandProfile?.category || undefined,
             onboardingComplete: hasValidBrand,
           },
           onboarding: {
@@ -294,17 +422,76 @@ export function DemoSessionProvider({ children }: { children: React.ReactNode })
         }));
       }
     } catch (e: any) {
-      console.error("Failed to load user profile:", e);
-      setProfileError(e?.message || "Failed to load workspace profile.");
+      if (e?.name === 'AbortError') {
+        console.warn("[DemoSession] Profile load aborted or timed out for user:", userId);
+      } else {
+        console.error("Failed to load user profile:", e);
+        setProfileError(e?.message || "Failed to load workspace profile.");
+      }
     } finally {
-      setProfileLoading(false);
+      if (!signal?.aborted) {
+        setProfileLoading(false);
+      }
     }
+  };
+
+  const syncUserData = (supabaseSession: any, force = false) => {
+    const user = supabaseSession?.user;
+    if (!user) return;
+    if (lastLoadedUserIdRef.current === user.id && !force) {
+      return;
+    }
+    lastLoadedUserIdRef.current = user.id;
+
+    // Abort any prior in-flight requests
+    activeAbortRef.current?.abort();
+    const controller = new AbortController();
+    activeAbortRef.current = controller;
+
+    // Trigger profile loading (managed by profileLoading flag)
+    loadUserProfile(user.id, controller.signal);
+
+    // Concurrently trigger optional products and library loading (does not block profileLoading or authLoading)
+    loadUserProducts(supabaseSession.access_token, controller.signal);
+    loadUserLibrary(user.id, supabaseSession.access_token, controller.signal);
+  };
+
+  const handleAuthChange = (event: string, supabaseSession: any) => {
+    if (!supabaseSession?.user || event === 'SIGNED_OUT') {
+      activeAbortRef.current?.abort();
+      lastLoadedUserIdRef.current = null;
+      setSession((s) => ({ ...s, user: null, products: [], library: [] }));
+      setAuthLoading(false);
+      setProfileLoading(false);
+      setProfileError(null);
+      setIsLoaded(true);
+      return;
+    }
+
+    // Set user synchronously
+    setSession((s) => ({
+      ...s,
+      user: {
+        id: supabaseSession.user.id,
+        name: supabaseSession.user.user_metadata?.full_name || supabaseSession.user.email || "",
+        email: supabaseSession.user.email || "",
+      },
+    }));
+
+    // Authentication is resolved!
+    setAuthLoading(false);
+    setIsLoaded(true);
+
+    // Defer profile and optional data fetching outside the synchronous auth callback
+    setTimeout(() => {
+      syncUserData(supabaseSession, event === 'TOKEN_REFRESHED' ? false : false);
+    }, 0);
   };
 
   const refreshProfile = async () => {
     const authSession = await getSafeSession();
     if (authSession?.user?.id) {
-      await loadUserProfile(authSession.user.id);
+      syncUserData(authSession, true);
     }
   };
 
@@ -323,65 +510,86 @@ export function DemoSessionProvider({ children }: { children: React.ReactNode })
     // Set isLoaded immediately on client mount to prevent blank screen hangs
     setIsLoaded(true);
 
-    // Safely check active session and purge expired/invalid refresh tokens
+    // Synchronous auth state listener (never await inside callback)
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, supabaseSession) => {
+      handleAuthChange(event, supabaseSession);
+    });
+
+    // Fallback safe session probe in case onAuthStateChange is delayed
     getSafeSession()
-      .then(async (authSession) => {
+      .then((authSession) => {
         if (authSession?.user) {
-          setSession((s) => ({
-            ...s,
-            user: {
-              name: authSession.user.user_metadata?.full_name || authSession.user.email || "",
-              email: authSession.user.email || "",
-            },
-          }));
-          await Promise.allSettled([
-            loadUserProfile(authSession.user.id),
-            loadUserProducts(authSession.access_token),
-            loadUserLibrary(),
-          ]);
-        } else {
-          setSession((s) => ({ ...s, user: null, products: [], library: [] }));
+          if (lastLoadedUserIdRef.current !== authSession.user.id) {
+            handleAuthChange("INITIAL_SESSION", authSession);
+          }
+        } else if (lastLoadedUserIdRef.current === null) {
+          setAuthLoading(false);
         }
       })
       .catch(() => {
-        setSession((s) => ({ ...s, user: null, products: [], library: [] }));
-      })
-      .finally(() => {
         setAuthLoading(false);
-        setIsLoaded(true);
       });
 
-    // Listen for auth state changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, supabaseSession) => {
-      if (supabaseSession?.user) {
-        setSession((s) => ({
-          ...s,
-          user: {
-            name: supabaseSession.user.user_metadata?.full_name || supabaseSession.user.email || "",
-            email: supabaseSession.user.email || "",
-          },
-        }));
-        await Promise.allSettled([
-          loadUserProfile(supabaseSession.user.id),
-          loadUserProducts(supabaseSession.access_token),
-          loadUserLibrary(),
-        ]);
-      } else {
-        setSession((s) => ({ ...s, user: null, products: [], library: [] }));
-      }
-      setAuthLoading(false);
-      setIsLoaded(true);
-    });
-
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      activeAbortRef.current?.abort();
+    };
   }, []);
 
   useEffect(() => {
-    if (isLoaded) {
-      const { products, library, ...toSave } = session;
-      localStorage.setItem("govisual_demo_session", JSON.stringify(toSave));
+    if (isLoaded && typeof window !== "undefined") {
+      try {
+        const { products, library, recentWork, brandProfile, ...rest } = session;
+
+        // Clean brandProfile of huge base64 data URLs to prevent blowing localStorage quota
+        const cleanBrandProfile = brandProfile ? { ...brandProfile } : undefined;
+        if (
+          cleanBrandProfile?.logoUrl &&
+          cleanBrandProfile.logoUrl.startsWith("data:") &&
+          cleanBrandProfile.logoUrl.length > 8192
+        ) {
+          cleanBrandProfile.logoUrl = "";
+        }
+
+        // Clean recentWork of huge data URLs and keep only recent 3 items
+        const cleanRecentWork = (recentWork || [])
+          .filter((w) => !w.url?.startsWith("data:") || w.url.length <= 8192)
+          .slice(0, 3);
+
+        const toSave = {
+          ...rest,
+          brandProfile: cleanBrandProfile,
+          recentWork: cleanRecentWork,
+        };
+
+        localStorage.setItem("govisual_demo_session", JSON.stringify(toSave));
+      } catch (err: any) {
+        // Handle QuotaExceededError safely so the UI never crashes
+        if (
+          err?.name === "QuotaExceededError" ||
+          err?.code === 22 ||
+          err?.code === 1014 ||
+          err?.message?.includes("quota")
+        ) {
+          console.warn("[DemoSession] localStorage quota exceeded. Pruning stored session.");
+          try {
+            const minimalSave = {
+              user: session.user,
+              workspace: session.workspace,
+              onboarding: session.onboarding,
+            };
+            localStorage.setItem("govisual_demo_session", JSON.stringify(minimalSave));
+          } catch {
+            try {
+              localStorage.removeItem("govisual_demo_session");
+            } catch {}
+          }
+        } else {
+          console.warn("[DemoSession] Failed to persist session to localStorage:", err);
+        }
+      }
     }
   }, [session, isLoaded]);
 
@@ -413,6 +621,26 @@ export function DemoSessionProvider({ children }: { children: React.ReactNode })
             city: workspace.city || null,
           }),
         ]);
+        // Write workspace persistent backup
+        if (typeof window !== 'undefined') {
+          try {
+            const email = authSession?.user?.email;
+            const backupPayload = JSON.stringify({
+              business_id: userId,
+              businessName: workspace.businessName,
+              category: workspace.category || "",
+              city: workspace.city || "",
+              onboardingComplete: true,
+            });
+            localStorage.setItem(`govisual_user_data_${userId}`, backupPayload);
+            localStorage.setItem('govisual_user_data_latest', backupPayload);
+            localStorage.setItem(`gv_backup_${userId}`, backupPayload);
+            if (email) {
+              localStorage.setItem(`govisual_user_data_${email}`, backupPayload);
+              localStorage.setItem(`gv_backup_${email}`, backupPayload);
+            }
+          } catch {}
+        }
       }
     } catch (e) {
       console.error("Failed to persist workspace profile:", e);
@@ -480,6 +708,60 @@ export function DemoSessionProvider({ children }: { children: React.ReactNode })
             business_name: businessName,
           });
         }
+
+        // Also persist via Backend API to ensure server-side DB synchronization
+        try {
+          const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+          await fetch(`${apiBase}/brand/onboard/save`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${authSession.access_token}`,
+            },
+            body: JSON.stringify({
+              brand_brain_session: {
+                business_id: userId,
+                shopName: businessName,
+                category: profile.category || session.workspace?.category || "",
+                city: profile.city || session.workspace?.city || "",
+                brandSummary: profile.brandSummary || "",
+                websiteUrl: profile.website || "",
+                instagramHandle: profile.instagram || "",
+                logoUrl: profile.logoUrl ?? currentBrand?.logoUrl ?? "",
+                primaryColor: profile.primaryColor ?? currentBrand?.primaryColor ?? "",
+                secondaryColor: profile.secondaryColor ?? currentBrand?.secondaryColor ?? "",
+              },
+            }),
+          });
+        } catch (apiErr) {
+          console.warn("[updateBrandProfileAndPersist] Backend onboard/save notice:", apiErr);
+        }
+        // Write brand profile persistent backup
+        if (typeof window !== 'undefined') {
+          try {
+            const email = authSession?.user?.email;
+            const backupPayload = JSON.stringify({
+              business_id: userId,
+              businessName,
+              category: profile.category || session.workspace?.category || "",
+              city: profile.city || session.workspace?.city || "",
+              brandSummary: profile.brandSummary || "",
+              website: profile.website || "",
+              instagram: profile.instagram || "",
+              logoUrl: profile.logoUrl ?? currentBrand?.logoUrl ?? "",
+              primaryColor: profile.primaryColor ?? currentBrand?.primaryColor ?? "",
+              secondaryColor: profile.secondaryColor ?? currentBrand?.secondaryColor ?? "",
+              onboardingComplete: true,
+            });
+            localStorage.setItem(`govisual_user_data_${userId}`, backupPayload);
+            localStorage.setItem('govisual_user_data_latest', backupPayload);
+            localStorage.setItem(`gv_backup_${userId}`, backupPayload);
+            if (email) {
+              localStorage.setItem(`govisual_user_data_${email}`, backupPayload);
+              localStorage.setItem(`gv_backup_${email}`, backupPayload);
+            }
+          } catch {}
+        }
       }
     } catch (e) {
       console.error("Failed to persist brand profile:", e);
@@ -523,11 +805,18 @@ export function DemoSessionProvider({ children }: { children: React.ReactNode })
   };
 
   const logout = async () => {
+    const currentUserId = session.user?.id;
     await supabase.auth.signOut();
     setSession(defaultState);
     setProfileLoading(false);
     setProfileError(null);
-    localStorage.removeItem("govisual_demo_session");
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("govisual_demo_session");
+      if (currentUserId) {
+        localStorage.removeItem(`govisual_user_data_${currentUserId}`);
+      }
+      localStorage.removeItem("govisual_user_data_latest");
+    }
   };
 
   if (!isLoaded) {
@@ -535,7 +824,11 @@ export function DemoSessionProvider({ children }: { children: React.ReactNode })
   }
 
   const hasCompletedOnboarding = Boolean(
-    (session.onboarding.brandProfileApproved || session.onboarding.workspaceCreated) &&
+    (
+      session.onboarding.brandProfileApproved ||
+      session.onboarding.workspaceCreated ||
+      session.brandProfile?.onboardingComplete
+    ) &&
     (
       !isPlaceholderBrandName(session.brandProfile?.businessName) ||
       !isPlaceholderBrandName(session.workspace?.businessName)

@@ -32,6 +32,32 @@ export class BackendUnavailableError extends Error {
 }
 
 /**
+ * Attempts fetch to the primary BASE and seamlessly falls back to loopback alternative (localhost <-> 127.0.0.1)
+ * to avoid IPv6/IPv4 loopback connection issues on Windows browsers.
+ */
+async function fetchWithFallback(path: string, options: RequestInit): Promise<Response> {
+  const primaryUrl = `${BASE}${path}`;
+  try {
+    return await fetch(primaryUrl, options);
+  } catch (err: any) {
+    if (err?.name === 'AbortError') throw err;
+
+    const altBase = BASE.includes('localhost')
+      ? BASE.replace('localhost', '127.0.0.1')
+      : BASE.replace('127.0.0.1', 'localhost');
+
+    if (altBase !== BASE) {
+      try {
+        return await fetch(`${altBase}${path}`, options);
+      } catch (altErr: any) {
+        if (altErr?.name === 'AbortError') throw altErr;
+      }
+    }
+    throw err;
+  }
+}
+
+/**
  * Safely resolves the current access token, with optional fallback to refreshing the session.
  */
 export async function resolveAccessToken(explicitToken?: string, forceRefresh = false): Promise<string | null> {
@@ -54,7 +80,11 @@ export async function resolveAccessToken(explicitToken?: string, forceRefresh = 
   return session?.access_token || null;
 }
 
-export async function getProducts(explicitToken?: string): Promise<Product[]> {
+export async function getProducts(explicitToken?: string, signal?: AbortSignal): Promise<Product[]> {
+  if (signal?.aborted) {
+    return [];
+  }
+
   const token = await resolveAccessToken(explicitToken);
 
   // If unauthenticated or token not ready (e.g. during onboarding or guest session),
@@ -68,10 +98,27 @@ export async function getProducts(explicitToken?: string): Promise<Product[]> {
     'Authorization': `Bearer ${token}`
   };
 
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  const onAbort = () => controller.abort();
+  if (signal) {
+    if (signal.aborted) {
+      clearTimeout(timer);
+      return [];
+    }
+    signal.addEventListener('abort', onAbort);
+  }
+
   let r: Response;
   try {
-    r = await fetch(`${BASE}/api/products`, { headers });
-  } catch {
+    r = await fetchWithFallback('/api/products', { headers, signal: controller.signal });
+  } catch (err: any) {
+    clearTimeout(timer);
+    if (signal) signal.removeEventListener('abort', onAbort);
+    if (err?.name === 'AbortError' || signal?.aborted) {
+      console.warn('[getProducts] Request timed out or aborted');
+      return [];
+    }
     throw new BackendUnavailableError();
   }
 
@@ -80,21 +127,34 @@ export async function getProducts(explicitToken?: string): Promise<Product[]> {
     const refreshedToken = await resolveAccessToken(undefined, true);
     if (refreshedToken && refreshedToken !== token) {
       try {
-        const retryRes = await fetch(`${BASE}/api/products`, {
+        const retryRes = await fetchWithFallback('/api/products', {
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${refreshedToken}`
-          }
+          },
+          signal: controller.signal
         });
+        clearTimeout(timer);
+        if (signal) signal.removeEventListener('abort', onAbort);
         if (retryRes.ok) {
           return retryRes.json();
         }
-      } catch {
+      } catch (retryErr: any) {
+        clearTimeout(timer);
+        if (signal) signal.removeEventListener('abort', onAbort);
+        if (retryErr?.name === 'AbortError' || signal?.aborted) {
+          return [];
+        }
         throw new BackendUnavailableError();
       }
     }
+    clearTimeout(timer);
+    if (signal) signal.removeEventListener('abort', onAbort);
     throw new ProductAuthError();
   }
+
+  clearTimeout(timer);
+  if (signal) signal.removeEventListener('abort', onAbort);
 
   if (!r.ok) {
     const errText = await r.text().catch(() => '');
@@ -112,7 +172,7 @@ export async function createProduct(product: Partial<Product>, explicitToken?: s
 
   let r: Response;
   try {
-    r = await fetch(`${BASE}/api/products`, {
+    r = await fetchWithFallback('/api/products', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -128,7 +188,7 @@ export async function createProduct(product: Partial<Product>, explicitToken?: s
     const refreshedToken = await resolveAccessToken(undefined, true);
     if (refreshedToken && refreshedToken !== token) {
       try {
-        const retryRes = await fetch(`${BASE}/api/products`, {
+        const retryRes = await fetchWithFallback('/api/products', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -161,7 +221,7 @@ export async function updateProduct(id: string, product: Partial<Product>, expli
 
   let r: Response;
   try {
-    r = await fetch(`${BASE}/api/products/${id}`, {
+    r = await fetchWithFallback(`/api/products/${id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -177,7 +237,7 @@ export async function updateProduct(id: string, product: Partial<Product>, expli
     const refreshedToken = await resolveAccessToken(undefined, true);
     if (refreshedToken && refreshedToken !== token) {
       try {
-        const retryRes = await fetch(`${BASE}/api/products/${id}`, {
+        const retryRes = await fetchWithFallback(`/api/products/${id}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -210,7 +270,7 @@ export async function deleteProduct(id: string, explicitToken?: string): Promise
 
   let r: Response;
   try {
-    r = await fetch(`${BASE}/api/products/${id}`, {
+    r = await fetchWithFallback(`/api/products/${id}`, {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
@@ -225,7 +285,7 @@ export async function deleteProduct(id: string, explicitToken?: string): Promise
     const refreshedToken = await resolveAccessToken(undefined, true);
     if (refreshedToken && refreshedToken !== token) {
       try {
-        const retryRes = await fetch(`${BASE}/api/products/${id}`, {
+        const retryRes = await fetchWithFallback(`/api/products/${id}`, {
           method: 'DELETE',
           headers: {
             'Content-Type': 'application/json',
@@ -268,15 +328,23 @@ export async function uploadProductImage(file: File, userId: string): Promise<st
   return filePath
 }
 
-export async function getProductImageUrl(filePath: string): Promise<string | null> {
+export async function getProductImageUrl(filePath: string, signal?: AbortSignal): Promise<string | null> {
   if (!filePath) return null;
   // If it's already a full URL (e.g. from previous tests), just return it
   if (filePath.startsWith('http')) return filePath;
 
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4000);
+  const onAbort = () => controller.abort();
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener('abort', onAbort);
+  }
+
   try {
     const { data, error } = await supabase.storage
       .from('product-images')
-      .createSignedUrl(filePath, 60 * 60) // 1 hour expiry
+      .createSignedUrl(filePath, 60 * 60); // 1 hour expiry
 
     if (error) {
       console.warn("Failed to generate signed url:", error.message || error);
@@ -284,9 +352,14 @@ export async function getProductImageUrl(filePath: string): Promise<string | nul
     }
     
     return data?.signedUrl || null;
-  } catch (err) {
-    console.warn("Failed to generate signed url:", err);
+  } catch (err: any) {
+    if (err?.name !== 'AbortError') {
+      console.warn("Failed to generate signed url:", err);
+    }
     return null;
+  } finally {
+    clearTimeout(timer);
+    if (signal) signal.removeEventListener('abort', onAbort);
   }
 }
 
@@ -305,9 +378,21 @@ export async function deleteProductImage(filePath: string): Promise<void> {
   }
 }
 
-export async function getGeneratedAssets() {
-  const session = await getSafeSession();
-  if (!session?.user?.id) return [];
+export async function getGeneratedAssets(explicitUserId?: string, signal?: AbortSignal) {
+  let userId = explicitUserId;
+  if (!userId) {
+    const session = await getSafeSession();
+    userId = session?.user?.id;
+  }
+  if (!userId) return [];
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 6000);
+  const onAbort = () => controller.abort();
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener('abort', onAbort);
+  }
 
   try {
     // Query generation_sessions for the current user and their generated_assets
@@ -324,8 +409,9 @@ export async function getGeneratedAssets() {
           created_at
         )
       `)
-      .eq('user_id', session.user.id)
-      .order('created_at', { ascending: false });
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .abortSignal(controller.signal);
 
     if (error) {
       console.warn("Failed to fetch generated assets:", error.message || error);
@@ -333,8 +419,13 @@ export async function getGeneratedAssets() {
     }
 
     return data || [];
-  } catch (err) {
-    console.warn("Failed to fetch generated assets:", err);
+  } catch (err: any) {
+    if (err?.name !== 'AbortError') {
+      console.warn("Failed to fetch generated assets:", err);
+    }
     return [];
+  } finally {
+    clearTimeout(timer);
+    if (signal) signal.removeEventListener('abort', onAbort);
   }
 }

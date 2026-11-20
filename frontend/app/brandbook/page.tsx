@@ -212,7 +212,11 @@ export default function BrandBookPage() {
     };
     
     setBrand(profile);
-    localStorage.setItem('gv_brand_profile', JSON.stringify(profile));
+    try {
+      localStorage.setItem('gv_brand_profile', JSON.stringify(profile));
+    } catch (e) {
+      console.warn("[BrandBook] Could not save brand profile to localStorage:", e);
+    }
 
     setBusinessName(profile.name);
     setCity(searchCity || "Mumbai");
@@ -485,8 +489,12 @@ export default function BrandBookPage() {
       if (data.success && data.brandBook) {
         const book = data.brandBook as BrandBookData;
         setBrandBook(book);
-        localStorage.setItem("gv_brand_book", JSON.stringify(book));
-        sessionStorage.setItem("gv_brand_book", JSON.stringify(book));
+        try {
+          localStorage.setItem("gv_brand_book", JSON.stringify(book));
+          sessionStorage.setItem("gv_brand_book", JSON.stringify(book));
+        } catch (e) {
+          console.warn("[BrandBook] Could not save brand book to storage:", e);
+        }
 
         // Persist brand profile into database for user
         if (updateBrandProfileAndPersist) {

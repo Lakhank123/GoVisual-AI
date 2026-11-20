@@ -1,0 +1,5 @@
+condition,display_name,rouge1_f1,rouge2_f1,rougeL_f1,distinct_1,distinct_2,constraint_coverage,validity_rate,latency_median_ms,latency_p95_ms
+unenhanced,1. Unenhanced Input,21.09,11.88,15.89,14.96,33.08,100.0,100.0,0.0,0.0
+template,2. Template Baseline,18.78,12.96,17.64,9.28,17.19,100.0,100.0,0.0,0.01
+t5_fallback,3. Rule-Based Fallback,13.82,7.89,10.9,11.78,24.09,100.0,100.0,0.0,0.0
+t5_model,4. Custom T5 (GoVisual),32.55,21.04,26.34,9.56,22.99,100.0,100.0,7541.72,8217.01

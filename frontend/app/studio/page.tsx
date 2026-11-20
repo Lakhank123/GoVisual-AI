@@ -23,18 +23,18 @@ interface Question {
 const CREATIVE_QUESTIONS: Question[] = [
   { key: 'product', label: 'Which product are we promoting?', type: 'product_select' },
   { key: 'reference_image', label: 'Upload a reference image (Optional)', type: 'image_upload' },
-  { 
-    key: 'image_intent', 
-    label: 'What would you like the AI to preserve?', 
-    type: 'choice', 
+  {
+    key: 'image_intent',
+    label: 'What would you like the AI to preserve?',
+    type: 'choice',
     options: ['Product only', 'Product + Camera Angle', 'Product + Lighting', 'Product + Background', 'Entire Composition', 'Use only as inspiration'],
     condition: (answers) => !!answers['reference_image'] && answers['reference_image'] !== 'skipped'
   },
   { key: 'platform', label: 'Where will this be published?', type: 'choice', options: ['Instagram Feed (1:1)', 'Instagram Story (9:16)', 'Facebook Post', 'LinkedIn Post'] },
-  { 
-    key: 'goal', 
-    label: 'What are we trying to achieve with this campaign?', 
-    type: 'choice', 
+  {
+    key: 'goal',
+    label: 'What are we trying to achieve with this campaign?',
+    type: 'choice',
     options: ['Increase Sales', 'Festival Campaign', 'Product Launch', 'Brand Awareness'],
     recommendations: {
       'Increase Sales': ['Use a strong Call to Action', 'Highlight any discounts', 'Use urgent messaging'],
@@ -54,10 +54,10 @@ const CREATIVE_QUESTIONS: Question[] = [
   { key: 'cta', label: 'What is the primary action you want them to take?', type: 'text', placeholder: 'e.g., Shop Now, Learn More, Get 20% Off' },
   { key: 'tone', label: 'What feeling should people get when they see this?', type: 'choice', options: ['Premium & Luxurious', 'Bold & Energetic', 'Clean & Minimal', 'Warm & Friendly'] },
   { key: 'logo_image', label: 'Upload your brand logo (Optional)', type: 'image_upload' },
-  { 
-    key: 'logo_variants', 
-    label: 'Which variants should include the logo?', 
-    type: 'choice', 
+  {
+    key: 'logo_variants',
+    label: 'Which variants should include the logo?',
+    type: 'choice',
     options: ['All variants', 'Basic variant', 'Professional variant', 'Creative variant'],
     condition: (answers) => !!answers['logo_image'] && answers['logo_image'] !== 'skipped'
   },
@@ -83,9 +83,9 @@ const GENERATION_STEPS = [
 ];
 
 export default function ContentStudioPage() {
-  const { session, addAssetToLibrary } = useDemoSession();
+  const { session, addAssetToLibrary, refreshLibrary } = useDemoSession();
   const [activeTab, setActiveTab] = useState<"creatives" | "photoshoots">("creatives");
-  
+
   // State
   const [step, setStep] = useState(0);
   const [direction, setDirection] = useState(0);
@@ -95,10 +95,44 @@ export default function ContentStudioPage() {
   const [generationStep, setGenerationStep] = useState(0);
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  
+
   // Results
   const [generatedResults, setGeneratedResults] = useState<any[]>([]);
   const [generatedCaption, setGeneratedCaption] = useState("");
+  const [savedMap, setSavedMap] = useState<Record<number, boolean>>({});
+
+  const handleSaveToLibrary = async (img: any, idx: number) => {
+    try {
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+      const fullUrl = img.url?.startsWith("http") ? img.url : `${apiBase}${img.url?.startsWith("/") ? "" : "/"}${img.url}`;
+      const supabaseSession = await getSafeSession();
+      const token = supabaseSession?.access_token;
+      if (token) {
+        await fetch(`${apiBase}/api/photoshoot/save-to-library`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            imageUrl: fullUrl,
+            productName: answers["product"] || session.brandProfile?.businessName || "Creative",
+            mode: "creative",
+            label: img.strategy_name || `Strategy ${idx + 1}`,
+            tags: {
+              mode: "creative",
+              caption: generatedCaption || "",
+              prompt: img.prompt_used || "",
+            }
+          }),
+        });
+      }
+      setSavedMap((prev) => ({ ...prev, [idx]: true }));
+      await refreshLibrary();
+    } catch (e) {
+      console.warn("Save to library failed:", e);
+    }
+  };
 
   // Instagram publishing state
   const [publishModalCandidate, setPublishModalCandidate] = useState<any | null>(null);
@@ -140,10 +174,10 @@ export default function ContentStudioPage() {
       bstr = atob(arr[1]);
     let n = bstr.length;
     const u8arr = new Uint8Array(n);
-    while(n--){
-        u8arr[n] = bstr.charCodeAt(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
     }
-    return new File([u8arr], filename, {type:mime});
+    return new File([u8arr], filename, { type: mime });
   }
 
   const allQuestions = activeTab === "creatives" ? CREATIVE_QUESTIONS : PHOTOSHOOT_QUESTIONS;
@@ -153,7 +187,7 @@ export default function ContentStudioPage() {
   useEffect(() => {
     const draftKey = `gv_studio_draft_${activeTab}`;
     const draft = sessionStorage.getItem(draftKey);
-    
+
     if (draft) {
       try {
         const parsed = JSON.parse(draft);
@@ -176,38 +210,38 @@ export default function ContentStudioPage() {
             }
             return;
           } else {
-             sessionStorage.removeItem(draftKey);
+            sessionStorage.removeItem(draftKey);
           }
         }
-      } catch (e) {}
+      } catch (e) { }
     }
-    
+
     const defaults: Record<string, string> = {};
     if (activeTab === "creatives") {
-       if (session.brandProfile?.targetAudience) {
-          defaults['audience'] = session.brandProfile.targetAudience;
-       }
-       if (session.brandProfile?.brandPersonality) {
-          const p = session.brandProfile.brandPersonality.toLowerCase();
-          if (p.includes('premium') || p.includes('luxury')) defaults['tone'] = 'Premium & Luxurious';
-          else if (p.includes('bold') || p.includes('energetic')) defaults['tone'] = 'Bold & Energetic';
-          else if (p.includes('clean') || p.includes('minimal')) defaults['tone'] = 'Clean & Minimal';
-          else defaults['tone'] = 'Warm & Friendly';
-       }
-       // Read search parameters if navigating from Dashboard Action Cards
-       if (typeof window !== "undefined") {
-         const params = new URLSearchParams(window.location.search);
-         const goalParam = params.get("goal");
-         if (goalParam) {
-           defaults['goal'] = goalParam;
-         }
-         const platformParam = params.get("platform");
-         if (platformParam) {
-           defaults['platform'] = platformParam;
-         } else if (params.get("tab") === "instagram") {
-           defaults['platform'] = 'Instagram Feed (1:1)';
-         }
-       }
+      if (session.brandProfile?.targetAudience) {
+        defaults['audience'] = session.brandProfile.targetAudience;
+      }
+      if (session.brandProfile?.brandPersonality) {
+        const p = session.brandProfile.brandPersonality.toLowerCase();
+        if (p.includes('premium') || p.includes('luxury')) defaults['tone'] = 'Premium & Luxurious';
+        else if (p.includes('bold') || p.includes('energetic')) defaults['tone'] = 'Bold & Energetic';
+        else if (p.includes('clean') || p.includes('minimal')) defaults['tone'] = 'Clean & Minimal';
+        else defaults['tone'] = 'Warm & Friendly';
+      }
+      // Read search parameters if navigating from Dashboard Action Cards
+      if (typeof window !== "undefined") {
+        const params = new URLSearchParams(window.location.search);
+        const goalParam = params.get("goal");
+        if (goalParam) {
+          defaults['goal'] = goalParam;
+        }
+        const platformParam = params.get("platform");
+        if (platformParam) {
+          defaults['platform'] = platformParam;
+        } else if (params.get("tab") === "instagram") {
+          defaults['platform'] = 'Instagram Feed (1:1)';
+        }
+      }
     }
     setAnswers(defaults);
     setStep(0);
@@ -229,9 +263,9 @@ export default function ContentStudioPage() {
   const handleNext = (overrideAnswer?: string) => {
     const finalAnswer = overrideAnswer || currentAnswer;
     if (!finalAnswer && !answers[q.key]) return;
-    
+
     let newAnswers = { ...answers, [q.key]: finalAnswer || answers[q.key] };
-    
+
     // Auto-populate from Product Catalog if product is selected
     if (q.type === 'product_select' && finalAnswer) {
       const selectedProduct = session.products.find(p => p.name === finalAnswer);
@@ -240,7 +274,7 @@ export default function ContentStudioPage() {
         newAnswers.product_category = selectedProduct.category;
         newAnswers.product_description = selectedProduct.description;
         newAnswers.product_price = selectedProduct.price;
-        
+
         if (selectedProduct.imageUrl) {
           // Pre-fill the reference image with the URL from the provider
           newAnswers.reference_image = selectedProduct.imageUrl;
@@ -255,9 +289,9 @@ export default function ContentStudioPage() {
 
     setAnswers(newAnswers);
     setCurrentAnswer('');
-    
+
     const nextQuestions = allQuestions.filter(question => !question.condition || question.condition(newAnswers));
-    
+
     if (step < nextQuestions.length - 1) {
       setDirection(1);
       setStep(step + 1);
@@ -270,7 +304,7 @@ export default function ContentStudioPage() {
     setWizardState("generating");
     setGenerationStep(0);
     setGenerationError(null);
-    
+
     // UI progression simulator (runs parallel to API call)
     let currentGenerationStep = 0;
     const interval = setInterval(() => {
@@ -282,7 +316,7 @@ export default function ContentStudioPage() {
 
     try {
       const formData = new FormData();
-      
+
       formData.append("product", finalAnswers.product || "");
       formData.append("price", finalAnswers.product_price || "see store");
       formData.append("description", finalAnswers.product_description || "");
@@ -307,40 +341,55 @@ export default function ContentStudioPage() {
       const profileColors = [session.brandProfile?.primaryColor, session.brandProfile?.secondaryColor].filter(Boolean);
       formData.append("brand_colors", profileColors.length ? profileColors.join(', ') : "#ffffff");
       formData.append("category", effectiveCategory);
+
+      // Clean brand profile to avoid massive base64 data URLs in text fields (which trigger 1024KB part limit)
+      const cleanBrandProfile: any = { ...session.brandProfile };
+      if (typeof cleanBrandProfile.logoUrl === 'string' && cleanBrandProfile.logoUrl.startsWith('data:')) {
+        delete cleanBrandProfile.logoUrl;
+      }
+      if (typeof cleanBrandProfile.coverUrl === 'string' && cleanBrandProfile.coverUrl.startsWith('data:')) {
+        delete cleanBrandProfile.coverUrl;
+      }
+      if (Array.isArray(cleanBrandProfile.photos)) {
+        cleanBrandProfile.photos = cleanBrandProfile.photos.filter((p: any) =>
+          typeof p === 'string' ? !p.startsWith('data:') : !p?.url?.startsWith('data:')
+        );
+      }
+
       formData.append("brand_dna", JSON.stringify({
-        ...session.brandProfile,
+        ...cleanBrandProfile,
         business_name: effectiveBrandName,
         category: effectiveCategory,
         city: session.workspace?.city,
       }));
-      
+
       // Append Reference Image
       const refImg = finalAnswers.reference_image;
       if (refImg && refImg !== 'skipped') {
         if (refImg.startsWith("data:")) {
-           const filename = finalAnswers.reference_image_filename || "reference.jpg";
-           const file = dataURLtoFile(refImg, filename);
-           formData.append("product_image", file);
+          const filename = finalAnswers.reference_image_filename || "reference.jpg";
+          const file = dataURLtoFile(refImg, filename);
+          formData.append("product_image", file);
         } else {
-           // Resolve relative or absolute URL into full URL
-           const fullUrl = refImg.startsWith("/") ? `${window.location.origin}${refImg}` : refImg;
-           try {
-              const imgResp = await fetch(fullUrl);
-              if (imgResp.ok) {
-                 const blob = await imgResp.blob();
-                 const filename = finalAnswers.reference_image_filename || "catalog_product.jpg";
-                 const file = new File([blob], filename, { type: blob.type || "image/jpeg" });
-                 formData.append("product_image", file);
-              } else {
-                 formData.append("reference_image_url", fullUrl);
-              }
-           } catch (e) {
-              console.warn("Could not fetch catalog reference image:", e);
+          // Resolve relative or absolute URL into full URL
+          const fullUrl = refImg.startsWith("/") ? `${window.location.origin}${refImg}` : refImg;
+          try {
+            const imgResp = await fetch(fullUrl);
+            if (imgResp.ok) {
+              const blob = await imgResp.blob();
+              const filename = finalAnswers.reference_image_filename || "catalog_product.jpg";
+              const file = new File([blob], filename, { type: blob.type || "image/jpeg" });
+              formData.append("product_image", file);
+            } else {
               formData.append("reference_image_url", fullUrl);
-           }
+            }
+          } catch (e) {
+            console.warn("Could not fetch catalog reference image:", e);
+            formData.append("reference_image_url", fullUrl);
+          }
         }
       }
-      
+
       // Append Logo Image (Fall back to brand profile logo if not manually uploaded in answers)
       const effectiveLogo = (finalAnswers.logo_image && finalAnswers.logo_image !== 'skipped')
         ? finalAnswers.logo_image
@@ -348,25 +397,25 @@ export default function ContentStudioPage() {
 
       if (effectiveLogo && effectiveLogo !== 'skipped') {
         if (effectiveLogo.startsWith("data:")) {
-           const filename = finalAnswers.logo_image_filename || "brand_logo.png";
-           const file = dataURLtoFile(effectiveLogo, filename);
-           formData.append("logo_image", file);
+          const filename = finalAnswers.logo_image_filename || "brand_logo.png";
+          const file = dataURLtoFile(effectiveLogo, filename);
+          formData.append("logo_image", file);
         } else {
-           const fullLogoUrl = effectiveLogo.startsWith("/") ? `${window.location.origin}${effectiveLogo}` : effectiveLogo;
-           try {
-             const logoResp = await fetch(fullLogoUrl);
-             if (logoResp.ok) {
-               const blob = await logoResp.blob();
-               const filename = finalAnswers.logo_image_filename || "brand_logo.png";
-               formData.append("logo_image", new File([blob], filename, { type: blob.type || "image/png" }));
-             }
-           } catch (e) {
-             console.warn("Could not fetch logo image URL:", e);
-           }
+          const fullLogoUrl = effectiveLogo.startsWith("/") ? `${window.location.origin}${effectiveLogo}` : effectiveLogo;
+          try {
+            const logoResp = await fetch(fullLogoUrl);
+            if (logoResp.ok) {
+              const blob = await logoResp.blob();
+              const filename = finalAnswers.logo_image_filename || "brand_logo.png";
+              formData.append("logo_image", new File([blob], filename, { type: blob.type || "image/png" }));
+            }
+          } catch (e) {
+            console.warn("Could not fetch logo image URL:", e);
+          }
         }
       }
       if (finalAnswers.logo_variants) {
-         formData.append("logo_variants", finalAnswers.logo_variants);
+        formData.append("logo_variants", finalAnswers.logo_variants);
       }
       if (finalAnswers.logo_position) {
         formData.append("logo_position", finalAnswers.logo_position);
@@ -374,7 +423,7 @@ export default function ContentStudioPage() {
 
       // Pass Image Intent to backend
       if (finalAnswers.image_intent) {
-         formData.append("image_intent", finalAnswers.image_intent);
+        formData.append("image_intent", finalAnswers.image_intent);
       }
 
       const supabaseSession = await getSafeSession();
@@ -406,24 +455,55 @@ export default function ContentStudioPage() {
       const resultsArray = (data.candidates || []).slice(0, 3);
       setGeneratedResults(resultsArray);
       setGeneratedCaption(data.caption);
-      
-      // Save all 3 to library automatically (Optional, or wait for user to save)
-      resultsArray.forEach((img: any) => {
-         const newAsset = {
-             id: Math.random().toString(36).substring(7),
-           type: activeTab === 'creatives' ? 'creative' : activeTab === 'photoshoots' ? 'photoshoot' : 'video',
-           url: img.url,
-           createdAt: new Date().toISOString(),
-           metadata: {
-             title: finalAnswers.product ? `${finalAnswers.product} (${img.strategy_name || img.label})` : `Generated ${activeTab.slice(0,-1)}`,
-             answers: finalAnswers,
-             prompt: img.prompt_used || img.prompt_preview,
-             caption: img.caption || `${finalAnswers.product || "Product"} by ${session.brandProfile?.businessName || session.workspace?.businessName || "Our Brand"}. Available now.`,
-             hashtags: `#${(finalAnswers.product || "Product").replace(/\s+/g, "")} #${(session.brandProfile?.businessName || "Brand").replace(/\s+/g, "")} #ShopLocal #NewArrivals`
-           }
-         };
-         addAssetToLibrary(newAsset as any);
+
+      // Auto-save all 3 generated candidates to library
+      const newSavedMap: Record<number, boolean> = {};
+      resultsArray.forEach(async (img: any, idx: number) => {
+        newSavedMap[idx] = true;
+        const fullUrl = img.url?.startsWith("http") ? img.url : `${apiBase}${img.url?.startsWith("/") ? "" : "/"}${img.url}`;
+        const newAsset = {
+          id: Math.random().toString(36).substring(7),
+          type: activeTab === 'creatives' ? 'creative' : activeTab === 'photoshoots' ? 'photoshoot' : 'video',
+          url: fullUrl,
+          createdAt: new Date().toISOString(),
+          metadata: {
+            title: finalAnswers.product ? `${finalAnswers.product} (${img.strategy_name || img.label || `Strategy ${idx + 1}`})` : `Generated ${activeTab.slice(0, -1)}`,
+            answers: finalAnswers,
+            prompt: img.prompt_used || img.prompt_preview,
+            caption: img.caption || data.caption || `${finalAnswers.product || "Product"} by ${session.brandProfile?.businessName || session.workspace?.businessName || "Our Brand"}. Available now.`,
+            hashtags: `#${(finalAnswers.product || "Product").replace(/\s+/g, "")} #${(session.brandProfile?.businessName || "Brand").replace(/\s+/g, "")} #ShopLocal #NewArrivals`
+          }
+        };
+        addAssetToLibrary(newAsset as any);
+
+        if (token) {
+          try {
+            await fetch(`${apiBase}/api/photoshoot/save-to-library`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                imageUrl: fullUrl,
+                productName: finalAnswers.product || session.brandProfile?.businessName || "Creative",
+                mode: "creative",
+                label: img.strategy_name || `Strategy ${idx + 1}`,
+                tags: {
+                  mode: "creative",
+                  caption: data.caption || "",
+                  prompt: img.prompt_used || "",
+                  hashtags: newAsset.metadata.hashtags,
+                }
+              }),
+            });
+            await refreshLibrary();
+          } catch (saveErr) {
+            console.warn("Auto-save candidate to database failed:", saveErr);
+          }
+        }
       });
+      setSavedMap(newSavedMap);
 
       sessionStorage.removeItem(`gv_studio_draft_${activeTab}`);
       setWizardState("results");
@@ -470,7 +550,7 @@ export default function ContentStudioPage() {
       </div>
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", maxWidth: 1200, margin: "0 auto", padding: "32px 24px", width: "100%" }}>
-        
+
         <div style={{ marginBottom: 32 }}>
           <h1 style={{ fontSize: 26, fontWeight: 700, marginBottom: 6, color: "#F7F3ED" }}>AI Campaign Builder</h1>
           <p style={{ color: "#B9AA99", fontSize: 14 }}>Your AI Marketing Strategist is ready to plan and create.</p>
@@ -487,15 +567,15 @@ export default function ContentStudioPage() {
 
         {/* Workspace */}
         <div style={{ display: "grid", gridTemplateColumns: wizardState === "results" ? "1fr" : "1.2fr 0.8fr", gap: 32, flex: 1 }}>
-          
+
           {/* Left Panel: The Strategist */}
           {wizardState !== "results" && (
             <div style={{ background: "#21170F", border: "1px solid #3B2B1E", borderRadius: 16, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative" }}>
-              
+
               {wizardState === "questionnaire" && (
                 <div style={{ flex: 1, padding: 40, display: "flex", flexDirection: "column" }}>
                   <div style={{ marginBottom: 40 }}>
-                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#B9AA99", marginBottom: 12 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#B9AA99", marginBottom: 12 }}>
                       <span>Building Campaign... Step {step + 1} of {activeQuestions.length}</span>
                       <span style={{ color: "#E8B66F" }}>{Math.round(progress)}%</span>
                     </div>
@@ -520,11 +600,11 @@ export default function ContentStudioPage() {
                         style={{ position: "absolute", width: "100%", height: "100%", overflowY: "auto", paddingRight: "8px", paddingBottom: "24px" }}
                       >
                         <h2 style={{ fontSize: 24, fontWeight: 700, color: "#F7F3ED", marginBottom: 24, lineHeight: 1.4 }}>{q.label}</h2>
-                        
+
                         {answers[q.key] && currentAnswer === '' && q.type !== 'image_upload' && (
-                           <div style={{ marginBottom: 16, color: "#B9AA99", fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>
-                             <span>✨ Using existing profile:</span> <strong style={{ color: "#E8B66F" }}>{answers[q.key]}</strong>
-                           </div>
+                          <div style={{ marginBottom: 16, color: "#B9AA99", fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>
+                            <span>✨ Using existing profile:</span> <strong style={{ color: "#E8B66F" }}>{answers[q.key]}</strong>
+                          </div>
                         )}
 
                         {q.type === 'text' && (
@@ -564,7 +644,7 @@ export default function ContentStudioPage() {
                               </div>
                             ) : (
                               session.products.map(p => (
-                                 <button
+                                <button
                                   key={p.id}
                                   onClick={() => {
                                     setCurrentAnswer(p.name);
@@ -626,7 +706,7 @@ export default function ContentStudioPage() {
                               </div>
                             ) : (
                               session.library.filter(a => a.type === 'creative').map(a => (
-                                 <button
+                                <button
                                   key={a.id}
                                   onClick={() => { setCurrentAnswer(a.metadata?.title || a.id); setTimeout(() => handleNext(a.metadata?.title || a.id), 150); }}
                                   style={{ padding: "16px", borderRadius: 12, border: (currentAnswer || answers[q.key]) === (a.metadata?.title || a.id) ? "1px solid #E8B66F" : "1px solid #3B2B1E", background: (currentAnswer || answers[q.key]) === (a.metadata?.title || a.id) ? "rgba(232,182,111,0.1)" : "#14100D", color: (currentAnswer || answers[q.key]) === (a.metadata?.title || a.id) ? "#E8B66F" : "#F7F3ED", fontSize: 14, fontWeight: 500, cursor: "pointer", textAlign: "left", transition: "0.2s" }}
@@ -681,8 +761,8 @@ export default function ContentStudioPage() {
                               </div>
                             )}
 
-                            <div 
-                              style={{ padding: "32px", border: "2px dashed #3B2B1E", borderRadius: 16, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer", background: "#14100D" }} 
+                            <div
+                              style={{ padding: "32px", border: "2px dashed #3B2B1E", borderRadius: 16, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer", background: "#14100D" }}
                               onClick={() => document.getElementById('file-upload')?.click()}
                             >
                               <span style={{ fontSize: 32, marginBottom: 12 }}>📸</span>
@@ -690,16 +770,16 @@ export default function ContentStudioPage() {
                                 {(currentAnswer || answers[q.key]) && (currentAnswer || answers[q.key]) !== 'skipped' ? 'Click to replace image' : 'Click to upload an image'}
                               </span>
                               <span style={{ color: "rgba(255,255,255,0.4)", fontSize: 13, marginTop: 4 }}>JPG, PNG, WEBP up to 10MB</span>
-                              <input 
-                                id="file-upload" 
-                                type="file" 
-                                accept="image/jpeg, image/png, image/webp" 
+                              <input
+                                id="file-upload"
+                                type="file"
+                                accept="image/jpeg, image/png, image/webp"
                                 style={{ display: 'none' }}
                                 onChange={(e) => {
                                   setUploadError(null);
                                   if (e.target.files && e.target.files[0]) {
                                     const file = e.target.files[0];
-                                    
+
                                     // Validation
                                     const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
                                     if (!validTypes.includes(file.type)) {
@@ -727,25 +807,25 @@ export default function ContentStudioPage() {
                                 }}
                               />
                             </div>
-                            
+
                             {/* If they already selected one, show preview */}
                             {(currentAnswer || answers[q.key]) && (currentAnswer || answers[q.key]) !== 'skipped' && (
-                               <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 12, background: "#14100D", border: "1px solid #3B2B1E", padding: 12, borderRadius: 12 }}>
-                                 <img src={currentAnswer || answers[q.key]} alt="Product reference preview" style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 8, border: "1px solid #3B2B1E" }} />
-                                 <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
-                                   <span style={{ color: '#E8B66F', fontSize: 14, fontWeight: 500 }}>
-                                      {answers[`${q.key}_filename`]?.startsWith('catalog_') ? 'Using Master Product Image' : 'Image attached'}
-                                   </span>
-                                   <span style={{ color: '#B9AA99', fontSize: 12, textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap", maxWidth: 200 }}>
-                                     {answers[`${q.key}_filename`] || "reference_image.jpg"}
-                                   </span>
-                                 </div>
-                                 <button onClick={(e) => { e.stopPropagation(); setCurrentAnswer('skipped'); setAnswers(prev => ({...prev, [q.key]: 'skipped', [`${q.key}_filename`]: ''})); }} style={{ background: "transparent", border: "1px solid rgba(239,68,68,0.4)", color: "#ef4444", fontSize: 13, cursor: "pointer", padding: "6px 12px", borderRadius: 6, fontWeight: 500 }}>Remove</button>
-                               </div>
+                              <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 12, background: "#14100D", border: "1px solid #3B2B1E", padding: 12, borderRadius: 12 }}>
+                                <img src={currentAnswer || answers[q.key]} alt="Product reference preview" style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 8, border: "1px solid #3B2B1E" }} />
+                                <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
+                                  <span style={{ color: '#E8B66F', fontSize: 14, fontWeight: 500 }}>
+                                    {answers[`${q.key}_filename`]?.startsWith('catalog_') ? 'Using Master Product Image' : 'Image attached'}
+                                  </span>
+                                  <span style={{ color: '#B9AA99', fontSize: 12, textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap", maxWidth: 200 }}>
+                                    {answers[`${q.key}_filename`] || "reference_image.jpg"}
+                                  </span>
+                                </div>
+                                <button onClick={(e) => { e.stopPropagation(); setCurrentAnswer('skipped'); setAnswers(prev => ({ ...prev, [q.key]: 'skipped', [`${q.key}_filename`]: '' })); }} style={{ background: "transparent", border: "1px solid rgba(239,68,68,0.4)", color: "#ef4444", fontSize: 13, cursor: "pointer", padding: "6px 12px", borderRadius: 6, fontWeight: 500 }}>Remove</button>
+                              </div>
                             )}
 
                             <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
-                              <button 
+                              <button
                                 onClick={() => {
                                   setCurrentAnswer('skipped');
                                   handleNext('skipped');
@@ -755,7 +835,7 @@ export default function ContentStudioPage() {
                                 Skip this step
                               </button>
                               {((currentAnswer || answers[q.key]) && (currentAnswer || answers[q.key]) !== 'skipped') && (
-                                <button 
+                                <button
                                   onClick={() => handleNext()}
                                   style={{ flex: 1, padding: "14px", background: "#E8B66F", border: "none", color: "#0B0907", borderRadius: 12, fontWeight: 600, cursor: "pointer" }}
                                 >
@@ -767,26 +847,26 @@ export default function ContentStudioPage() {
                         )}
 
                         <div style={{ marginTop: 40, display: "flex", justifyContent: "space-between" }}>
-                           <button 
-                              onClick={() => {
-                                 if (step > 0) {
-                                    setDirection(-1);
-                                    setStep(step - 1);
-                                 }
-                              }}
-                              style={{ padding: "12px 24px", background: "transparent", color: "#B9AA99", border: "none", borderRadius: 8, fontWeight: 600, cursor: step > 0 ? "pointer" : "not-allowed", opacity: step > 0 ? 1 : 0.5 }}
+                          <button
+                            onClick={() => {
+                              if (step > 0) {
+                                setDirection(-1);
+                                setStep(step - 1);
+                              }
+                            }}
+                            style={{ padding: "12px 24px", background: "transparent", color: "#B9AA99", border: "none", borderRadius: 8, fontWeight: 600, cursor: step > 0 ? "pointer" : "not-allowed", opacity: step > 0 ? 1 : 0.5 }}
+                          >
+                            Back
+                          </button>
+
+                          {(q.type === 'text') && (
+                            <button
+                              onClick={() => handleNext()}
+                              style={{ padding: "12px 32px", background: "#E8B66F", color: "#0B0907", border: "none", borderRadius: 8, fontWeight: 700, cursor: "pointer" }}
                             >
-                              Back
+                              {step === activeQuestions.length - 1 ? 'Generate Campaign' : 'Next'}
                             </button>
-                            
-                            {(q.type === 'text') && (
-                              <button 
-                                onClick={() => handleNext()}
-                                style={{ padding: "12px 32px", background: "#E8B66F", color: "#0B0907", border: "none", borderRadius: 8, fontWeight: 700, cursor: "pointer" }}
-                              >
-                                {step === activeQuestions.length - 1 ? 'Generate Campaign' : 'Next'}
-                              </button>
-                            )}
+                          )}
                         </div>
                       </motion.div>
                     </AnimatePresence>
@@ -795,36 +875,36 @@ export default function ContentStudioPage() {
               )}
 
               {wizardState === "generating" && (
-                 <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", padding: 40 }}>
-                   
-                   {generationError ? (
-                     <div style={{ textAlign: "center", maxWidth: 400 }}>
-                        <div style={{ fontSize: 48, marginBottom: 16 }}>⚠️</div>
-                        <h3 style={{ fontSize: 20, fontWeight: 700, color: "#ef4444", marginBottom: 12 }}>Generation Failed</h3>
-                        <p style={{ color: "#B9AA99", fontSize: 14, marginBottom: 24, lineHeight: 1.5 }}>
-                          {generationError}
-                        </p>
-                        <button onClick={() => setWizardState("questionnaire")} style={{ padding: "12px 24px", background: "transparent", border: "1px solid #3B2B1E", color: "#F7F3ED", borderRadius: 8, fontWeight: 600, cursor: "pointer" }}>Go Back & Retry</button>
-                     </div>
-                   ) : (
-                     <div style={{ display: "flex", flexDirection: "column", gap: 16, width: "100%", maxWidth: 350 }}>
-                        {GENERATION_STEPS.map((s, idx) => (
-                           <div key={idx} style={{ display: "flex", alignItems: "center", gap: 12, opacity: generationStep >= idx ? 1 : 0.3, transition: "0.5s" }}>
-                              <div style={{ 
-                                 width: 20, height: 20, borderRadius: "50%", 
-                                 background: generationStep > idx ? "#E8B66F" : generationStep === idx ? "transparent" : "transparent",
-                                 border: generationStep === idx ? "2px solid #E8B66F" : generationStep > idx ? "none" : "2px solid #3B2B1E",
-                                 display: "flex", alignItems: "center", justifyContent: "center", color: "#0B0907", fontSize: 10, fontWeight: 700
-                              }}>
-                                 {generationStep > idx && "✓"}
-                              </div>
-                              <span style={{ fontSize: 14, fontWeight: generationStep === idx ? 600 : 400, color: generationStep >= idx ? "#F7F3ED" : "#B9AA99" }}>{s}</span>
-                           </div>
-                        ))}
-                     </div>
-                   )}
-                   
-                 </div>
+                <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", padding: 40 }}>
+
+                  {generationError ? (
+                    <div style={{ textAlign: "center", maxWidth: 400 }}>
+                      <div style={{ fontSize: 48, marginBottom: 16 }}>⚠️</div>
+                      <h3 style={{ fontSize: 20, fontWeight: 700, color: "#ef4444", marginBottom: 12 }}>Generation Failed</h3>
+                      <p style={{ color: "#B9AA99", fontSize: 14, marginBottom: 24, lineHeight: 1.5 }}>
+                        {generationError}
+                      </p>
+                      <button onClick={() => setWizardState("questionnaire")} style={{ padding: "12px 24px", background: "transparent", border: "1px solid #3B2B1E", color: "#F7F3ED", borderRadius: 8, fontWeight: 600, cursor: "pointer" }}>Go Back & Retry</button>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 16, width: "100%", maxWidth: 350 }}>
+                      {GENERATION_STEPS.map((s, idx) => (
+                        <div key={idx} style={{ display: "flex", alignItems: "center", gap: 12, opacity: generationStep >= idx ? 1 : 0.3, transition: "0.5s" }}>
+                          <div style={{
+                            width: 20, height: 20, borderRadius: "50%",
+                            background: generationStep > idx ? "#E8B66F" : generationStep === idx ? "transparent" : "transparent",
+                            border: generationStep === idx ? "2px solid #E8B66F" : generationStep > idx ? "none" : "2px solid #3B2B1E",
+                            display: "flex", alignItems: "center", justifyContent: "center", color: "#0B0907", fontSize: 10, fontWeight: 700
+                          }}>
+                            {generationStep > idx && "✓"}
+                          </div>
+                          <span style={{ fontSize: 14, fontWeight: generationStep === idx ? 600 : 400, color: generationStep >= idx ? "#F7F3ED" : "#B9AA99" }}>{s}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                </div>
               )}
             </div>
           )}
@@ -833,149 +913,150 @@ export default function ContentStudioPage() {
           {wizardState !== "results" && (
             <div style={{ background: "#21170F", border: "1px solid #3B2B1E", borderRadius: 16, padding: 24, height: "fit-content" }}>
               <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 20, color: "#F7F3ED", display: "flex", alignItems: "center", gap: 8 }}>
-                 📝 Live Campaign Brief
+                📝 Live Campaign Brief
               </h3>
-              
+
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                 <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid #3B2B1E", paddingBottom: 12 }}>
-                    <span style={{ fontSize: 13, color: "#B9AA99" }}>Business</span>
-                    <span style={{ fontSize: 13, color: "#F7F3ED", fontWeight: 500, textAlign: "right" }}>{session.workspace?.businessName || "Your Shop"}</span>
-                 </div>
-                 
-                 {allQuestions.map(question => {
-                    if (!answers[question.key] && !question.condition?.(answers)) return null; 
-                    if (question.type === 'image_upload' && answers[question.key]) {
-                        return (
-                           <div key={question.key} style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid #3B2B1E", paddingBottom: 12 }}>
-                              <span style={{ fontSize: 13, color: "#B9AA99" }}>Reference Image</span>
-                              <span style={{ fontSize: 13, color: "#E8B66F", fontWeight: 500, textAlign: "right" }}>
-                                 {answers[question.key] === 'skipped' ? 'Skipped' : 'Attached ✓'}
-                              </span>
-                           </div>
-                        );
-                    }
+                <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid #3B2B1E", paddingBottom: 12 }}>
+                  <span style={{ fontSize: 13, color: "#B9AA99" }}>Business</span>
+                  <span style={{ fontSize: 13, color: "#F7F3ED", fontWeight: 500, textAlign: "right" }}>{session.workspace?.businessName || "Your Shop"}</span>
+                </div>
+
+                {allQuestions.map(question => {
+                  if (!answers[question.key] && !question.condition?.(answers)) return null;
+                  if (question.type === 'image_upload' && answers[question.key]) {
                     return (
-                       <div key={question.key} style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid #3B2B1E", paddingBottom: 12 }}>
-                          <span style={{ fontSize: 13, color: "#B9AA99" }}>
-                             {question.key.charAt(0).toUpperCase() + question.key.slice(1).replace('_', ' ')}
-                          </span>
-                          <span style={{ fontSize: 13, color: answers[question.key] ? "#F7F3ED" : "#B9AA99", opacity: answers[question.key] ? 1 : 0.5, fontWeight: 500, textAlign: "right", maxWidth: 150, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                             {answers[question.key] || "Pending..."}
-                          </span>
-                       </div>
-                    )
-                 })}
+                      <div key={question.key} style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid #3B2B1E", paddingBottom: 12 }}>
+                        <span style={{ fontSize: 13, color: "#B9AA99" }}>Reference Image</span>
+                        <span style={{ fontSize: 13, color: "#E8B66F", fontWeight: 500, textAlign: "right" }}>
+                          {answers[question.key] === 'skipped' ? 'Skipped' : 'Attached ✓'}
+                        </span>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div key={question.key} style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid #3B2B1E", paddingBottom: 12 }}>
+                      <span style={{ fontSize: 13, color: "#B9AA99" }}>
+                        {question.key.charAt(0).toUpperCase() + question.key.slice(1).replace('_', ' ')}
+                      </span>
+                      <span style={{ fontSize: 13, color: answers[question.key] ? "#F7F3ED" : "#B9AA99", opacity: answers[question.key] ? 1 : 0.5, fontWeight: 500, textAlign: "right", maxWidth: 150, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {answers[question.key] || "Pending..."}
+                      </span>
+                    </div>
+                  )
+                })}
               </div>
 
               {currentRecommendation && wizardState === "questionnaire" && (
-                 <div style={{ marginTop: 24, padding: 16, background: "rgba(232, 182, 111, 0.08)", border: "1px solid rgba(232, 182, 111, 0.25)", borderRadius: 12 }}>
-                    <h4 style={{ fontSize: 12, color: "#E8B66F", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
-                       💡 AI Recommendations
-                    </h4>
-                    <ul style={{ paddingLeft: 16, margin: 0, fontSize: 13, color: "#F7F3ED" }}>
-                       {currentRecommendation.map((rec, i) => <li key={i} style={{ marginBottom: 4 }}>{rec}</li>)}
-                    </ul>
-                 </div>
+                <div style={{ marginTop: 24, padding: 16, background: "rgba(232, 182, 111, 0.08)", border: "1px solid rgba(232, 182, 111, 0.25)", borderRadius: 12 }}>
+                  <h4 style={{ fontSize: 12, color: "#E8B66F", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                    💡 AI Recommendations
+                  </h4>
+                  <ul style={{ paddingLeft: 16, margin: 0, fontSize: 13, color: "#F7F3ED" }}>
+                    {currentRecommendation.map((rec, i) => <li key={i} style={{ marginBottom: 4 }}>{rec}</li>)}
+                  </ul>
+                </div>
               )}
 
               {wizardState === "questionnaire" && (
-                 <div style={{ marginTop: 24, fontSize: 12, color: "#B9AA99", textAlign: "center" }}>
-                    Draft saved automatically.
-                 </div>
+                <div style={{ marginTop: 24, fontSize: 12, color: "#B9AA99", textAlign: "center" }}>
+                  Draft saved automatically.
+                </div>
               )}
             </div>
           )}
 
           {/* Results Workspace */}
           {wizardState === "results" && (
-             <div style={{ flex: 1, padding: "20px 0", display: "flex", flexDirection: "column" }}>
-               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 32 }}>
-                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <div style={{ fontSize: 24 }}>🎉</div>
-                    <h2 style={{ fontSize: 24, fontWeight: 700, color: "#F7F3ED" }}>Campaign Successfully Created</h2>
-                 </div>
-                 <div style={{ display: "flex", gap: 12 }}>
-                   <button onClick={() => setWizardState("questionnaire")} style={{ padding: "10px 16px", background: "transparent", border: "1px solid #3B2B1E", color: "#F7F3ED", borderRadius: 8, fontWeight: 600, cursor: "pointer", fontSize: 14 }}>Edit Brief</button>
-                   <button onClick={() => startGeneration(answers)} style={{ padding: "10px 16px", background: "transparent", border: "1px solid #3B2B1E", color: "#F7F3ED", borderRadius: 8, fontWeight: 600, cursor: "pointer", fontSize: 14 }}>Generate Variations</button>
-                   <Link href="/library" style={{ textDecoration: "none" }}>
-                     <button style={{ padding: "10px 16px", background: "#21170F", border: "1px solid #3B2B1E", color: "#F7F3ED", borderRadius: 8, fontWeight: 600, cursor: "pointer", fontSize: 14 }}>View Library</button>
-                   </Link>
-                 </div>
-               </div>
-               
-               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 24 }}>
-                  {generatedResults.map((img, i) => (
-                    <div key={i} style={{ background: "#21170F", border: "1px solid #3B2B1E", borderRadius: 16, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-                       <div style={{ padding: "12px 16px", borderBottom: "1px solid #3B2B1E", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#14100D" }}>
-                         <span style={{ fontSize: 14, fontWeight: 600, color: "#F7F3ED" }}>{img.strategy_name || img.label || `Strategy ${i+1}`}</span>
-                         <span style={{ fontSize: 11, padding: "4px 8px", background: img.is_recommended ? "rgba(232, 182, 111, 0.15)" : "rgba(255,255,255,0.05)", color: img.is_recommended ? "#E8B66F" : "#B9AA99", borderRadius: 4, textTransform: "uppercase" }}>{img.is_recommended ? "⭐ RECOMMENDED BY GO VISUAL AI" : (img.tier || "CANDIDATE")}</span>
-                       </div>
-                       
-                       <div style={{ width: "100%", aspectRatio: "1/1", position: "relative" }}>
-                          <img src={img.url} alt={img.strategy_name || `Generated candidate ${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                       </div>
-                       
-                       <div style={{ padding: 16, flex: 1, display: "flex", flexDirection: "column" }}>
-                         {img.scores && (
-                           <div style={{ marginBottom: 12, color: "#B9AA99", fontSize: 12 }}>
-                             <div style={{ marginBottom: 8 }}>AI score: <strong style={{ color: img.is_recommended ? "#E8B66F" : "#F7F3ED" }}>{img.scores.weighted_total}/100</strong></div>
-                             <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "4px 12px" }}>
-                               {[
-                                 ["Product Fidelity", img.scores.product_fidelity],
-                                 ["Product Placement", img.scores.product_placement],
-                                 ["Scene Integration", img.scores.scene_integration],
-                                 ["Composition", img.scores.composition],
-                                 ["Brand Consistency", img.scores.brand_consistency],
-                                 ["Marketing Effectiveness", img.scores.marketing_effectiveness],
-                                 ["Text/Logo Safety", img.scores.text_logo_safety],
-                               ].map(([label, score]) => <React.Fragment key={label}><span>{label}</span><strong style={{ color: "#F7F3ED" }}>{score}</strong></React.Fragment>)}
-                             </div>
-                           </div>
-                         )}
-                         {img.critic_pass === false && (
-                           <div style={{ marginBottom: 12, color: "#f59e0b", fontSize: 12 }}>Quality gate failed: {img.critic_issues?.join(", ") || "See critic details."}</div>
-                         )}
-                         <details style={{ marginBottom: 16 }}>
-                            <summary style={{ fontSize: 12, color: "#B9AA99", cursor: "pointer", outline: "none" }}>View Generated Prompt</summary>
-                            <p style={{ fontSize: 12, color: "#F7F3ED", marginTop: 8, lineHeight: 1.4, padding: 8, background: "#14100D", borderRadius: 4, border: "1px solid #3B2B1E" }}>
-                               {img.prompt_used || img.prompt_preview}
-                            </p>
-                            {img.recommendation_reason && (
-                               <p style={{ fontSize: 12, color: "#E8B66F", marginTop: 8, lineHeight: 1.4, padding: 8, background: "rgba(232,182,111,0.08)", border: "1px solid rgba(232,182,111,0.25)", borderRadius: 4 }}>
-                                  💡 <strong>Critic Reason:</strong> {img.recommendation_reason}
-                               </p>
-                            )}
-                         </details>
-                         
-                         <div style={{ marginTop: "auto", display: "grid", gridTemplateColumns: "1fr 1.2fr 1fr", gap: 6 }}>
-                             <button onClick={() => downloadImage(img.url, i)} style={{ padding: "8px 4px", background: "#14100D", border: "1px solid #3B2B1E", color: "#F7F3ED", borderRadius: 6, fontSize: 11, cursor: "pointer", whiteSpace: "nowrap" }}>Download</button>
-                             <button onClick={() => handlePostToInstagram(img)} style={{ padding: "8px 4px", background: "linear-gradient(135deg, rgba(225,48,108,0.2), rgba(131,58,180,0.2))", border: "1px solid rgba(225,48,108,0.4)", color: "#ff80ab", borderRadius: 6, fontSize: 11, cursor: "pointer", fontWeight: 600, whiteSpace: "nowrap" }}>Post to Instagram</button>
-                             <button style={{ padding: "8px 4px", background: "#14100D", border: "1px solid #3B2B1E", color: "#F7F3ED", borderRadius: 6, fontSize: 11, cursor: "pointer", whiteSpace: "nowrap" }}>Use in Video</button>
-                          </div>
-                       </div>
-                    </div>
-                  ))}
-               </div>
+            <div style={{ flex: 1, padding: "20px 0", display: "flex", flexDirection: "column" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 32 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ fontSize: 24 }}>🎉</div>
+                  <h2 style={{ fontSize: 24, fontWeight: 700, color: "#F7F3ED" }}>Campaign Successfully Created</h2>
+                </div>
+                <div style={{ display: "flex", gap: 12 }}>
+                  <button onClick={() => setWizardState("questionnaire")} style={{ padding: "10px 16px", background: "transparent", border: "1px solid #3B2B1E", color: "#F7F3ED", borderRadius: 8, fontWeight: 600, cursor: "pointer", fontSize: 14 }}>Edit Brief</button>
+                  <button onClick={() => startGeneration(answers)} style={{ padding: "10px 16px", background: "transparent", border: "1px solid #3B2B1E", color: "#F7F3ED", borderRadius: 8, fontWeight: 600, cursor: "pointer", fontSize: 14 }}>Generate Variations</button>
+                  <Link href="/library" style={{ textDecoration: "none" }}>
+                    <button style={{ padding: "10px 16px", background: "#21170F", border: "1px solid #3B2B1E", color: "#F7F3ED", borderRadius: 8, fontWeight: 600, cursor: "pointer", fontSize: 14 }}>View Library</button>
+                  </Link>
+                </div>
+              </div>
 
-               {/* Marketing Copy Section (Requirement E) */}
-               <div style={{ marginTop: 32 }}>
-                  <CaptionSelector
-                    productName={answers["product"] || session.products?.[0]?.name || "Product"}
-                    brandName={session.brandProfile?.businessName || session.workspace?.businessName || "Our Shop"}
-                    category={session.brandProfile?.category || answers["category"] || "Commercial"}
-                    shotLabel={answers["goal"] || "Campaign Creative"}
-                    tone={answers["tone"] || "Premium & Luxurious"}
-                    offer={answers["offer"] || answers["cta"] || ""}
-                    background={answers["style"] || "Minimal"}
-                    visualDescription={`Campaign visual with ${answers["style"] || "clean"} setting, ${answers["tone"] || "premium"} mood`}
-                    initialCaption={generatedCaption}
-                    onCaptionChange={(cap) => setGeneratedCaption(cap)}
-                  />
-               </div>
-               
-             </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 24 }}>
+                {generatedResults.map((img, i) => (
+                  <div key={i} style={{ background: "#21170F", border: "1px solid #3B2B1E", borderRadius: 16, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                    <div style={{ padding: "12px 16px", borderBottom: "1px solid #3B2B1E", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#14100D" }}>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: "#F7F3ED" }}>{img.strategy_name || img.label || `Strategy ${i + 1}`}</span>
+                      <span style={{ fontSize: 11, padding: "4px 8px", background: img.is_recommended ? "rgba(232, 182, 111, 0.15)" : "rgba(255,255,255,0.05)", color: img.is_recommended ? "#E8B66F" : "#B9AA99", borderRadius: 4, textTransform: "uppercase" }}>{img.is_recommended ? "⭐ RECOMMENDED BY GO VISUAL AI" : (img.tier || "CANDIDATE")}</span>
+                    </div>
+
+                    <div style={{ width: "100%", aspectRatio: "1/1", position: "relative" }}>
+                      <img src={img.url} alt={img.strategy_name || `Generated candidate ${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    </div>
+
+                    <div style={{ padding: 16, flex: 1, display: "flex", flexDirection: "column" }}>
+                      {img.scores && (
+                        <div style={{ marginBottom: 12, color: "#B9AA99", fontSize: 12 }}>
+                          <div style={{ marginBottom: 8 }}>AI score: <strong style={{ color: img.is_recommended ? "#E8B66F" : "#F7F3ED" }}>{img.scores.weighted_total}/100</strong></div>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "4px 12px" }}>
+                            {[
+                              ["Product Fidelity", img.scores.product_fidelity],
+                              ["Product Placement", img.scores.product_placement],
+                              ["Scene Integration", img.scores.scene_integration],
+                              ["Composition", img.scores.composition],
+                              ["Brand Consistency", img.scores.brand_consistency],
+                              ["Marketing Effectiveness", img.scores.marketing_effectiveness],
+                              ["Text/Logo Safety", img.scores.text_logo_safety],
+                            ].map(([label, score]) => <React.Fragment key={label}><span>{label}</span><strong style={{ color: "#F7F3ED" }}>{score}</strong></React.Fragment>)}
+                          </div>
+                        </div>
+                      )}
+                      {img.critic_pass === false && (
+                        <div style={{ marginBottom: 12, color: "#f59e0b", fontSize: 12 }}>Quality gate failed: {img.critic_issues?.join(", ") || "See critic details."}</div>
+                      )}
+                      <details style={{ marginBottom: 16 }}>
+                        <summary style={{ fontSize: 12, color: "#B9AA99", cursor: "pointer", outline: "none" }}>View Generated Prompt</summary>
+                        <p style={{ fontSize: 12, color: "#F7F3ED", marginTop: 8, lineHeight: 1.4, padding: 8, background: "#14100D", borderRadius: 4, border: "1px solid #3B2B1E" }}>
+                          {img.prompt_used || img.prompt_preview}
+                        </p>
+                        {img.recommendation_reason && (
+                          <p style={{ fontSize: 12, color: "#E8B66F", marginTop: 8, lineHeight: 1.4, padding: 8, background: "rgba(232,182,111,0.08)", border: "1px solid rgba(232,182,111,0.25)", borderRadius: 4 }}>
+                            💡 <strong>Critic Reason:</strong> {img.recommendation_reason}
+                          </p>
+                        )}
+                      </details>
+
+                      <div style={{ marginTop: "auto", display: "grid", gridTemplateColumns: "1fr 1fr 1.2fr 1fr", gap: 6 }}>
+                        <button onClick={() => downloadImage(img.url, i)} style={{ padding: "8px 4px", background: "#14100D", border: "1px solid #3B2B1E", color: "#F7F3ED", borderRadius: 6, fontSize: 11, cursor: "pointer", whiteSpace: "nowrap" }}>Download</button>
+                        <button onClick={() => handleSaveToLibrary(img, i)} style={{ padding: "8px 4px", background: savedMap[i] ? "rgba(232,182,111,0.18)" : "#14100D", border: savedMap[i] ? "1px solid #E8B66F" : "1px solid #3B2B1E", color: savedMap[i] ? "#E8B66F" : "#F7F3ED", borderRadius: 6, fontSize: 11, cursor: "pointer", whiteSpace: "nowrap", fontWeight: savedMap[i] ? 600 : 400 }}>{savedMap[i] ? "Saved ✓" : "Save"}</button>
+                        <button onClick={() => handlePostToInstagram(img)} style={{ padding: "8px 4px", background: "linear-gradient(135deg, rgba(225,48,108,0.2), rgba(131,58,180,0.2))", border: "1px solid rgba(225,48,108,0.4)", color: "#ff80ab", borderRadius: 6, fontSize: 11, cursor: "pointer", fontWeight: 600, whiteSpace: "nowrap" }}>Post to Instagram</button>
+                        <button style={{ padding: "8px 4px", background: "#14100D", border: "1px solid #3B2B1E", color: "#F7F3ED", borderRadius: 6, fontSize: 11, cursor: "pointer", whiteSpace: "nowrap" }}>Use in Video</button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Marketing Copy Section (Requirement E) */}
+              <div style={{ marginTop: 32 }}>
+                <CaptionSelector
+                  productName={answers["product"] || session.products?.[0]?.name || "Product"}
+                  brandName={session.brandProfile?.businessName || session.workspace?.businessName || "Our Shop"}
+                  category={session.brandProfile?.category || answers["category"] || "Commercial"}
+                  shotLabel={answers["goal"] || "Campaign Creative"}
+                  tone={answers["tone"] || "Premium & Luxurious"}
+                  offer={answers["offer"] || answers["cta"] || ""}
+                  background={answers["style"] || "Minimal"}
+                  visualDescription={`Campaign visual with ${answers["style"] || "clean"} setting, ${answers["tone"] || "premium"} mood`}
+                  initialCaption={generatedCaption}
+                  onCaptionChange={(cap) => setGeneratedCaption(cap)}
+                />
+              </div>
+
+            </div>
           )}
-          
+
           {/* Instagram Publish Modal */}
           {publishModalCandidate && (
             <InstagramPublishModal

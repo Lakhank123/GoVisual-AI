@@ -1,0 +1,57 @@
+{
+  "legacy_v1": {
+    "name": "1. Legacy V1 Decoupled Composite",
+    "sample_count": 1,
+    "mean_product_fidelity": 3.2,
+    "mean_brand_consistency": 3.5,
+    "mean_marketing_readiness": 3.65,
+    "mean_govisual_score": 74.5,
+    "latency_seconds": 107.8,
+    "usable_creative_rate": 100.0,
+    "primary_defect_mode": "hard_composite_edges"
+  },
+  "photoshoot_v2": {
+    "name": "2. Multi-Shot Photoshoot Engine",
+    "sample_count": 3,
+    "mean_product_fidelity": 4.5,
+    "mean_brand_consistency": 4.2,
+    "mean_marketing_readiness": 4.36,
+    "mean_govisual_score": 85.6,
+    "latency_seconds": 24.5,
+    "usable_creative_rate": 100.0,
+    "primary_defect_mode": "None (Clean Commercial Output)"
+  },
+  "hf_img2img_kontext": {
+    "name": "3A. FLUX.1-Kontext-dev (Img2Img)",
+    "sample_count": 1,
+    "mean_product_fidelity": 2.0,
+    "mean_brand_consistency": 2.5,
+    "mean_marketing_readiness": 2.5,
+    "mean_govisual_score": 56.6,
+    "latency_seconds": 28.95,
+    "usable_creative_rate": 0.0,
+    "primary_defect_mode": "product_multiplication (generated 3 cans instead of 1)"
+  },
+  "hf_img2img_qwen": {
+    "name": "3B. Qwen-Image-Edit-2511 (Img2Img)",
+    "sample_count": 1,
+    "mean_product_fidelity": 3.0,
+    "mean_brand_consistency": 4.2,
+    "mean_marketing_readiness": 3.78,
+    "mean_govisual_score": 76.6,
+    "latency_seconds": 18.57,
+    "usable_creative_rate": 100.0,
+    "primary_defect_mode": "extraneous_background_products (2 gold cans hallucinated in background)"
+  },
+  "hf_img2img_klein": {
+    "name": "3C. FLUX.2-klein-4B (Img2Img)",
+    "sample_count": 1,
+    "mean_product_fidelity": 4.5,
+    "mean_brand_consistency": 4.2,
+    "mean_marketing_readiness": 4.38,
+    "mean_govisual_score": 86.4,
+    "latency_seconds": 6.73,
+    "usable_creative_rate": 100.0,
+    "primary_defect_mode": "None (Clean Commercial Output)"
+  }
+}
