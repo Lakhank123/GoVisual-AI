@@ -805,11 +805,18 @@ export function DemoSessionProvider({ children }: { children: React.ReactNode })
   };
 
   const logout = async () => {
+    const currentUserId = session.user?.id;
     await supabase.auth.signOut();
     setSession(defaultState);
     setProfileLoading(false);
     setProfileError(null);
-    localStorage.removeItem("govisual_demo_session");
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("govisual_demo_session");
+      if (currentUserId) {
+        localStorage.removeItem(`govisual_user_data_${currentUserId}`);
+      }
+      localStorage.removeItem("govisual_user_data_latest");
+    }
   };
 
   if (!isLoaded) {

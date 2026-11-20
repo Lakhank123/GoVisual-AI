@@ -50,8 +50,8 @@ class BrandBrainService:
             except Exception as e:
                 logger.info("[BrandBrainService] Supabase get notice, checking local store: %s", e)
 
-        # Fallback to local store if Supabase was empty, erroring, or had placeholder
-        if not row:
+        # Fallback to local store only if enabled (local development mode)
+        if not row and LocalWorkspaceStore.is_enabled():
             local_brand = LocalWorkspaceStore.get_brand(business_id) or (LocalWorkspaceStore.get_brand(email) if email else None)
             if local_brand:
                 row = local_brand
@@ -205,16 +205,17 @@ class BrandBrainService:
             "email": resolved_email,
         }
 
-        # 1. ALWAYS persist immediately to LocalWorkspaceStore (zero failure mode)
-        LocalWorkspaceStore.save_brand(business_id, db_payload, email=resolved_email)
-        LocalWorkspaceStore.save_user(business_id, {
-            "business_name": shop_name,
-            "category": category,
-            "city": city,
-            "onboarding_complete": True,
-        }, email=resolved_email)
+        # 1. Synchronize to local dev store only if explicitly enabled
+        if LocalWorkspaceStore.is_enabled():
+            LocalWorkspaceStore.save_brand(business_id, db_payload, email=resolved_email)
+            LocalWorkspaceStore.save_user(business_id, {
+                "business_name": shop_name,
+                "category": category,
+                "city": city,
+                "onboarding_complete": True,
+            }, email=resolved_email)
 
-        # 2. Synchronize to Supabase if available
+        # 2. Authoritative persistence in Supabase PostgreSQL
         client = self._get_supabase_client(token)
         if client:
             saved = False

@@ -13,6 +13,6 @@ imageio[ffmpeg]
 supabase
 razorpay
 rembg
-huggingface_hub  
+huggingface_hub
 openai
- 
+pyjwt

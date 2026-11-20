@@ -276,16 +276,36 @@ async def generate_photoshoot(
             if r["success"]:
                 fn   = f"shoot_{uuid.uuid4().hex}.jpg"
                 img_bytes = base64.b64decode(r["image_b64"])
-                with open(os.path.join(backend_gen_dir, fn), "wb") as f:
-                    f.write(img_bytes)
-                try:
-                    with open(os.path.join(frontend_gen_dir, fn), "wb") as f:
-                        f.write(img_bytes)
-                except Exception as fe:
-                    logger.debug("[Photoshoot] Notice copying to frontend static: %s", fe)
+                image_url = None
+
+                # Production: Upload to Cloudinary CDN for persistent, serverless-safe public HTTPS URL
+                if storage_svc.is_cloudinary_configured():
+                    try:
+                        image_url = storage_svc.upload_public_jpeg(
+                            img_bytes, folder="govisual_photoshoots", filename=fn
+                        )
+                    except Exception as ce:
+                        logger.warning("[Photoshoot] Cloudinary upload notice: %s", ce)
+                        image_url = None
+
+                # Local dev fallback: save to local static dir if Cloudinary not configured
+                if not image_url:
+                    try:
+                        with open(os.path.join(backend_gen_dir, fn), "wb") as f:
+                            f.write(img_bytes)
+                        try:
+                            with open(os.path.join(frontend_gen_dir, fn), "wb") as f:
+                                f.write(img_bytes)
+                        except Exception as fe:
+                            logger.debug("[Photoshoot] Notice copying to frontend static: %s", fe)
+                        image_url = f"/static/generated/{fn}"
+                    except Exception as le:
+                        logger.error("[Photoshoot] Local storage error: %s", le)
+                        image_url = f"data:image/jpeg;base64,{r['image_b64']}"
+
                 output.append({
                     "label":    r["label"],
-                    "url":      f"/static/generated/{fn}",
+                    "url":      image_url,
                     "success":  True,
                 })
             else:

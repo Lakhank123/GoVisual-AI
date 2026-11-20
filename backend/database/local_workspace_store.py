@@ -7,6 +7,26 @@ logger = logging.getLogger("LocalWorkspaceStore")
 
 STORE_FILE = os.path.join(os.path.dirname(__file__), "local_workspace_store.json")
 
+def is_local_dev_store_enabled() -> bool:
+    """
+    Determines whether local JSON persistence is permitted.
+    Strictly disabled in production to protect serverless runtime and guarantee
+    that Supabase PostgreSQL is the authoritative persistence layer.
+    """
+    env = os.getenv("ENVIRONMENT", "development").lower()
+    explicit_flag = os.getenv("ENABLE_LOCAL_WORKSPACE_DEV_STORE")
+
+    if explicit_flag is not None:
+        return explicit_flag.lower() in ("true", "1", "yes")
+
+    # In production, default to FALSE (PostgreSQL only)
+    if env in ("production", "prod"):
+        return False
+
+    # In local development or testing, allowed as a non-breaking developer fallback
+    return True
+
+
 def _load_store() -> Dict[str, Any]:
     if not os.path.exists(STORE_FILE):
         return {
@@ -30,6 +50,9 @@ def _load_store() -> Dict[str, Any]:
         }
 
 def _save_store(data: Dict[str, Any]):
+    if not is_local_dev_store_enabled():
+        logger.debug("[LocalWorkspaceStore] Local JSON write skipped: disabled in production environment.")
+        return
     try:
         os.makedirs(os.path.dirname(STORE_FILE), exist_ok=True)
         with open(STORE_FILE, "w", encoding="utf-8") as f:
@@ -37,15 +60,23 @@ def _save_store(data: Dict[str, Any]):
     except Exception as e:
         logger.error(f"Error saving {STORE_FILE}: {e}")
 
+
 class LocalWorkspaceStore:
     """
-    Local resilient persistence store for GoVisual AI.
-    Guarantees user profile, brand DNA, products, and generated library assets
-    are permanently saved and restored across sessions, even when cloud Supabase is unreachable.
+    Development-only resilient persistence store for GoVisual AI.
+    Used exclusively in local development mode to preserve workspace state
+    when offline. Gated off in production environments.
     """
 
     @staticmethod
+    def is_enabled() -> bool:
+        return is_local_dev_store_enabled()
+
+    @staticmethod
     def save_brand(business_id: str, brand_data: Dict[str, Any], email: Optional[str] = None):
+        if not is_local_dev_store_enabled():
+            return brand_data
+
         store = _load_store()
         normalized_data = dict(brand_data)
         normalized_data["business_id"] = business_id
@@ -75,31 +106,29 @@ class LocalWorkspaceStore:
 
     @staticmethod
     def get_brand(identifier: str) -> Optional[Dict[str, Any]]:
-        if not identifier:
+        if not identifier or not is_local_dev_store_enabled():
             return None
         store = _load_store()
         key = identifier.lower() if "@" in identifier else identifier
+
         # 1. Direct match by id or email
         if key in store["brands"]:
             return store["brands"][key]
         if identifier in store["brands"]:
             return store["brands"][identifier]
 
-        # 2. Search through brands for matching business_id or email
+        # 2. Search through brands for exact matching business_id or email
         for b_id, b_val in store["brands"].items():
             if b_val.get("business_id") == identifier or b_val.get("email", "").lower() == key:
                 return b_val
-
-        # 3. If "lakhankarani" is in identifier, check default seeded brand
-        if "lakhankarani" in key:
-            for b_id, b_val in store["brands"].items():
-                if "lakhankarani" in b_id.lower() or "lakhankarani" in b_val.get("email", "").lower():
-                    return b_val
 
         return None
 
     @staticmethod
     def save_user(user_id: str, user_data: Dict[str, Any], email: Optional[str] = None):
+        if not is_local_dev_store_enabled():
+            return user_data
+
         store = _load_store()
         u_info = store["users"].get(user_id, {})
         u_info.update(user_data)
@@ -116,7 +145,7 @@ class LocalWorkspaceStore:
 
     @staticmethod
     def get_user(identifier: str) -> Optional[Dict[str, Any]]:
-        if not identifier:
+        if not identifier or not is_local_dev_store_enabled():
             return None
         store = _load_store()
         key = identifier.lower() if "@" in identifier else identifier
@@ -131,16 +160,17 @@ class LocalWorkspaceStore:
 
     @staticmethod
     def save_library_asset(business_id: str, asset: Dict[str, Any], email: Optional[str] = None):
+        if not is_local_dev_store_enabled():
+            return
+
         store = _load_store()
         assets = store["library_assets"].get(business_id, [])
-        # Prevent duplicates
         filtered = [a for a in assets if a.get("id") != asset.get("id") and a.get("url") != asset.get("url")]
         filtered.insert(0, asset)
         store["library_assets"][business_id] = filtered
         if email:
             store["library_assets"][email.lower()] = filtered
 
-        # Increment generation count
         count = store["generation_counts"].get(business_id, 0) + 1
         store["generation_counts"][business_id] = count
         if email:
@@ -150,7 +180,7 @@ class LocalWorkspaceStore:
 
     @staticmethod
     def get_library_assets(identifier: str) -> List[Dict[str, Any]]:
-        if not identifier:
+        if not identifier or not is_local_dev_store_enabled():
             return []
         store = _load_store()
         key = identifier.lower() if "@" in identifier else identifier
@@ -165,7 +195,7 @@ class LocalWorkspaceStore:
 
     @staticmethod
     def get_generation_count(identifier: str) -> int:
-        if not identifier:
+        if not identifier or not is_local_dev_store_enabled():
             return 0
         store = _load_store()
         key = identifier.lower() if "@" in identifier else identifier
@@ -174,30 +204,3 @@ class LocalWorkspaceStore:
         if identifier in store["generation_counts"]:
             return store["generation_counts"][identifier]
         return 0
-
-    @staticmethod
-    def seed_known_user(email: str, brand_name: str, category: str = "Clothing / Fashion", city: str = "Mumbai"):
-        store = _load_store()
-        user_key = email.lower()
-        if user_key not in store["brands"]:
-            default_brand = {
-                "business_id": f"usr_{user_key.replace('@', '_').replace('.', '_')}",
-                "brand_name": brand_name,
-                "shopName": brand_name,
-                "category": category,
-                "city": city,
-                "brand_brief": json.dumps({
-                    "summary": f"{brand_name} is a premier {category.lower()} brand based in {city}.",
-                    "city": city,
-                    "tagline": "Crafted with Passion & Precision",
-                    "onboarding_complete": True,
-                }),
-                "primary_color": "#E8B66F",
-                "secondary_color": "#14100D",
-                "brand_tone": "warm",
-                "tagline": "Crafted with Passion & Precision",
-                "onboarding_complete": True,
-                "email": user_key,
-            }
-            LocalWorkspaceStore.save_brand(default_brand["business_id"], default_brand, email=user_key)
-            logger.info(f"Seeded default brand profile for {email}")

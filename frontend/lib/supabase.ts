@@ -357,7 +357,7 @@ export async function upsertBrandCoreIdentity(identity: Partial<BrandCoreIdentit
       }),
     }).catch(() => {});
 
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && identity.business_id) {
       const backupStr = JSON.stringify({
         business_id: identity.business_id,
         businessName: identity.brand_name,
@@ -371,8 +371,8 @@ export async function upsertBrandCoreIdentity(identity: Partial<BrandCoreIdentit
         instagram: identity.instagram_handle,
         onboardingComplete: true,
       });
+      // Store strictly under user's isolated business_id key (prevents cross-user leakage)
       localStorage.setItem(`govisual_user_data_${identity.business_id}`, backupStr);
-      localStorage.setItem('govisual_user_data_latest', backupStr);
     }
   } catch {}
 
