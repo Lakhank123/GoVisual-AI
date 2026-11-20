@@ -58,7 +58,7 @@ export default function LibraryPage() {
                 return true;
               })
               .map((asset) => {
-                const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+                const apiBase = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? "" : "http://127.0.0.1:8000");
                 const displayUrl = asset.url && !asset.url.startsWith("http") && !asset.url.startsWith("data:")
                   ? `${apiBase}${asset.url.startsWith("/") ? "" : "/"}${asset.url}`
                   : asset.url;

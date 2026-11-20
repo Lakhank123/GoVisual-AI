@@ -133,7 +133,7 @@ export async function getProfile(userId: string, signal?: AbortSignal): Promise<
     // Fallback: check backend sync API if Supabase cloud is unreachable or returned null
     if (!data || !data.business_name || data.business_name.toLowerCase() === 'my brand' || data.business_name.toLowerCase() === 'your shop') {
       try {
-        const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+        const apiBase = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || (typeof window !== 'undefined' ? '' : 'http://localhost:8000')
         const bRes = await fetch(`${apiBase}/brand/onboard/sync?user_id=${userId}`, { signal: controller.signal })
         if (bRes.ok) {
           const bJson = await bRes.json()
@@ -274,7 +274,7 @@ export async function getBrandCoreIdentity(businessId: string, signal?: AbortSig
     // Fallback: check backend sync API if Supabase cloud is unreachable or placeholder
     if (!data || !data.brand_name || data.brand_name.toLowerCase() === 'my brand' || data.brand_name.toLowerCase() === 'your shop') {
       try {
-        const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+        const apiBase = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || (typeof window !== 'undefined' ? '' : 'http://localhost:8000')
         const bRes = await fetch(`${apiBase}/brand/onboard/sync?user_id=${businessId}`, { signal: controller.signal })
         if (bRes.ok) {
           const bJson = await bRes.json()
@@ -342,7 +342,7 @@ export async function upsertBrandCoreIdentity(identity: Partial<BrandCoreIdentit
 
   // 1. Immediately persist to backend sync endpoint & localStorage
   try {
-    const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+    const apiBase = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || (typeof window !== 'undefined' ? '' : 'http://localhost:8000');
     fetch(`${apiBase}/brand/onboard/sync`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

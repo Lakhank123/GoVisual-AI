@@ -426,7 +426,7 @@ export default function BrandBookPage() {
     setStep(4);
     startLoadingTimer();
 
-    const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+    const BASE = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || (typeof window !== 'undefined' ? '' : 'http://127.0.0.1:8000');
     const cleanBiz = (businessName || session.brandProfile?.businessName || session.workspace?.businessName || "My Brand").trim();
     const cleanCat = (category || session.brandProfile?.category || session.workspace?.category || "Clothing / Fashion").trim();
     const cleanCity = (city || session.brandProfile?.city || session.workspace?.city || "Mumbai").trim();

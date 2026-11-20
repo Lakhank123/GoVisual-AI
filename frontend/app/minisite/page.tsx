@@ -196,7 +196,7 @@ export default function MinisitePage() {
     setAiLoading(true);
     setAiMessage(null);
     try {
-      const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+      const apiBase = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? "" : "http://127.0.0.1:8000");
       const response = await fetch(`${apiBase}/api/minisite/ai-suggest`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -254,7 +254,7 @@ export default function MinisitePage() {
     }
     setPublishing(true);
     try {
-      const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+      const apiBase = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? "" : "http://127.0.0.1:8000");
       const payload = {
         ...data,
         slug: data.slug || data.shopName.toLowerCase().replace(/[^a-z0-9]+/g, "-"),

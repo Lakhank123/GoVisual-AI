@@ -17,7 +17,7 @@ const nextConfig: NextConfig = {
     // Only proxy /static/ locally when developing against local backend.
     // In production (Vercel), media URLs are served directly via Cloudinary/Supabase CDN.
     if (isDev) {
-      const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+      const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
       return [
         {
           source: '/static/:path*',

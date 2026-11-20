@@ -17,7 +17,7 @@ export default function MinisitePreviewPage() {
 
   useEffect(() => {
     if (!slug) return;
-    const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+    const apiBase = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? "" : "http://127.0.0.1:8000");
     fetch(`${apiBase}/s/${slug}`)
       .then((res) => {
         if (!res.ok) throw new Error("Storefront not found or has expired.");

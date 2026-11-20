@@ -183,7 +183,7 @@ export function DemoSessionProvider({ children }: { children: React.ReactNode })
 
   const loadUserLibrary = async (explicitUserId?: string, explicitToken?: string, signal?: AbortSignal) => {
     try {
-      const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+      const apiBase = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? "" : "http://127.0.0.1:8000");
       let userId = explicitUserId;
       let token = explicitToken;
 
@@ -303,7 +303,7 @@ export function DemoSessionProvider({ children }: { children: React.ReactNode })
         try {
           const authSession = await getSafeSession();
           const email = authSession?.user?.email;
-          const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+          const apiBase = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? "" : "http://127.0.0.1:8000");
           const syncUrl = email
             ? `${apiBase}/brand/onboard/sync?email=${encodeURIComponent(email)}&user_id=${userId}`
             : `${apiBase}/brand/onboard/sync?user_id=${userId}`;
@@ -711,7 +711,7 @@ export function DemoSessionProvider({ children }: { children: React.ReactNode })
 
         // Also persist via Backend API to ensure server-side DB synchronization
         try {
-          const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+          const apiBase = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? "" : "http://127.0.0.1:8000");
           await fetch(`${apiBase}/brand/onboard/save`, {
             method: "POST",
             headers: {
